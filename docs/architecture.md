@@ -78,6 +78,13 @@ connection open, until every statement on it is finalized.
   another type is converted as SQLite converts it; NULL reads as 0 and as no bytes.
   A column the statement doesn't have, including one past a 32-bit `int`, reads as
   NULL.
+- A `Db` or `Stmt` is a handle into the shim's table, and copies of it are the same
+  handle. Once `close` or `finalize` frees the object, through any copy, every copy is
+  stale: a call that can fail fails with `MISUSE` ("no open connection" or "no
+  prepared statement"), `close` returns `false`, `finalize`, `reset`, and
+  `clear_bindings` do nothing, and the reads give 0, NULL, or no bytes. A stale handle
+  never reaches freed memory, and the same holds for a `Db {}` or `Stmt {}` never
+  opened.
 - `changes`, `last_insert_rowid`, `in_transaction`, `busy_timeout`, and `version` are
   SQLite's calls of those names. `busy_timeout` clamps its milliseconds to 0 through
   2,147,483,647, about 24.8 days, the range SQLite's `int` takes.

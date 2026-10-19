@@ -27,12 +27,14 @@ namespace sqlite;
 
 import std;
 
-// A connection: the address of SQLite's sqlite3, freed only by close. Flat,
-// so it crosses thread_spawn and queues; used by one thread at a time.
+// A connection: a handle to SQLite's sqlite3 in the shim's table, freed only
+// by close. Flat, so it crosses thread_spawn and queues; best used by one
+// thread at a time. Once it is closed, every copy of it is stale: a call that
+// can fail fails with MISUSE, and the rest read as nothing.
 struct Db { id: i64 = 0 }
 
-// A prepared statement on a connection: the address of a sqlite3_stmt, freed
-// only by finalize.
+// A prepared statement on a connection: a handle to a sqlite3_stmt, freed
+// only by finalize, after which every copy is stale, as a Db's.
 struct Stmt { id: i64 = 0 }
 
 // Why a call failed: SQLite's extended result code, or FAILED for fail, and
@@ -189,7 +191,8 @@ fn open(path, flags: i32 = READ_WRITE | CREATE, foreign_keys: bool = true) -> Db
 }
 
 // Closes db and returns true, or returns false and leaves it open while a
-// statement prepared on it isn't finalized.
+// statement prepared on it isn't finalized. False too when db is closed
+// already.
 fn close(db: Db) -> bool { close_c(db.id) == OK }
 
 // Runs every statement in sql, discarding any rows: a schema, pragmas, or
@@ -224,7 +227,7 @@ fn prepare(db: Db, sql) -> Stmt {
     return Stmt { id: id };
 }
 
-// Frees s. Use it no more after.
+// Frees s. Every copy of s is stale after; finalizing one again does nothing.
 fn finalize(s: Stmt) { finalize_c(s.id); }
 
 // Makes s ready to step from its first row again, keeping its bindings.
@@ -245,6 +248,7 @@ fn bind_null(s: Stmt, i) { check_stmt(s, bind_null_c(s.id, i)); }
 // RANGE when s has none of that name.
 fn parameter(s: Stmt, name) -> i64 {
     let i = bind_index_c(s.id, name);
+    if i < 0 { fail(MISUSE, NO_STMT); }
     if i == 0 { fail(RANGE, str("no parameter ", name)); }
     return i;
 }
@@ -282,7 +286,7 @@ fn column_name(s: Stmt, i: i64, out: u8[>..]&) { column_name_c(s.id, i, out); }
 // Appends rc's message to out: the connection's when its last error is rc,
 // SQLite's text for the code otherwise.
 fn message(db: i64, rc: i32, out: u8[>..]&) {
-    if db != 0 && errcode_c(db) == rc { errmsg_c(db, out); } else { errstr_c(rc, out); }
+    if errcode_c(db) == rc { errmsg_c(db, out); } else { errstr_c(rc, out); }
 }
 
 fn check(db, rc: i32) {
@@ -292,9 +296,13 @@ fn check(db, rc: i32) {
     fail(rc, msg);
 }
 
+let NO_STMT = "no prepared statement: finalized, or never prepared";
+
 fn check_stmt(s, rc: i32) {
     if rc == OK { return; }
-    check(db_of_c(s.id), rc);
+    let db = db_of_c(s.id);
+    if db == 0 { fail(rc, NO_STMT); }
+    check(db, rc);
 }
 
 // Rolls back what db's transaction holds, or with savepoint what the innermost

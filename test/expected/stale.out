@@ -1,0 +1,21 @@
+step a finalized statement's copy: 21 no prepared statement: finalized, or never prepared
+bind it: 21 no prepared statement: finalized, or never prepared
+name a parameter of it: 21 no prepared statement: finalized, or never prepared
+read its text: 21 no prepared statement: finalized, or never prepared
+its column 0: 0
+its column 0 is NULL: ok
+its column count: 0
+a Stmt never prepared: 21 no prepared statement: finalized, or never prepared
+step the old copy beside a new statement: 21 no prepared statement: finalized, or never prepared
+the new statement's row: ok
+its value: 8
+closed: ok
+exec through a closed Db's copy: 21 no open connection: closed, or never opened
+prepare on it: 21 no open connection: closed, or never opened
+inner: 21 no open connection: closed, or never opened
+a transaction on it: no error
+not in a transaction: ok
+its changes: 0
+closing it again returns false: ok
+a Db never opened: 21 no open connection: closed, or never opened
+run: no error

@@ -9,6 +9,7 @@ different machines aren't compared. Earlier runs are in
   - [Apple M1 Pro, macOS](#apple-m1-pro-macos)
   - [Apple M1 Pro, Linux arm64 in Docker](#apple-m1-pro-linux-arm64-in-docker)
 - [Connection mutex](#connection-mutex)
+- [Handle lookups](#handle-lookups)
 
 ## Build times
 
@@ -67,3 +68,22 @@ loaded, at a load average of about 5 on macOS.
 |---|---|---|---|
 | Apple M1 Pro, macOS 26.3.1, Apple clang 21.0.0 | 28.3 to 28.6 | 67.7 to 68.3 | about 10 ns |
 | The same, Linux arm64 in Docker (kernel 7.0.14-linuxkit), gcc 14.2.0 | 29.5 to 30.3 | 49.8 to 50.8 | about 5 ns |
+
+## Handle lookups
+
+What the shim's handle table costs: each call looks its handle up under one mutex
+that all threads share.
+
+Method: a Goose program, built with `goose build` at `-O2`, opens `:memory:`, prepares
+`SELECT ?`, and times 2,000,000 rounds of `sqlite::bind_i64`, `sqlite::step`,
+`sqlite::column_i64`, and `sqlite::reset` with `os::clock`, five runs, once with the
+shim before the table (handles as addresses, connections already serialized) and once
+with it. Apple M1 Pro, macOS 26.3.1, Goose `v2026.2`, Apple clang 21.0.0, 2026-10-19,
+at a load average of about 5.
+
+| Shim | ns a round, five runs |
+|---|---|
+| Handles as addresses | 69.1 to 69.5 |
+| Handle table | 101.2 to 101.9 |
+
+About 32 ns a round, or 8 ns for each of the four calls.

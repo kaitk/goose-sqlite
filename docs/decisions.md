@@ -97,10 +97,23 @@ with its reason and the trade-off that matters. How the package works, for its u
   sqlite error inside a program's own `exception::try<u8[]>` would be a type error, so
   the package's errors stay apart from the program's. The trade-off: a program that
   wants one handler for both wraps one in the other (2026-10-19).
-- **Handles are flat.** `Db` and `Stmt` each hold the address of SQLite's object as
+- **Handles are flat, and name a slot in the shim's table.** `Db` and `Stmt` each hold
   an `i64`, so they cross `thread_spawn` and queues, and C keeps no pointer into Goose
   memory: SQLite copies bound text and blobs (`SQLITE_TRANSIENT`), and column values
-  are appended to the caller's `u8[>..]` (2026-10-19).
+  are appended to the caller's `u8[>..]`. The `i64` is a slot index and that slot's
+  generation, not SQLite's address: `close` and `finalize` free the slot and bump the
+  generation, and every call looks its handle up first. Goose copies a struct freely,
+  so a copy of a `Stmt` finalized through another, or of a `Db` closed through
+  another, used to reach freed memory; now it is stale, and a call that can fail
+  fails with `MISUSE`, while the rest read as nothing or do nothing. One table serves
+  every thread, under SQLite's static application mutex (`SQLITE_MUTEX_STATIC_APP1`),
+  rather than a table per thread, since a handle crosses threads when a program hands
+  a connection over. The cost is that mutex on each call, uncontended in the
+  one-connection-per-thread layout but shared by all threads: about 8 ns a call on an
+  M1 Pro under macOS ([results](results.md#handle-lookups)). The table guards
+  lookups, not a call in progress: closing a connection on one thread while another
+  is inside a call on it is still a race (2026-10-19). This replaces "Handles are
+  flat" of 2026-10-19, where a handle was the object's address.
 - **The program finalizes its statements.** Goose has no destructors, so a statement
   left open when an error leaves `run` stays open until the program finalizes it, and
   `close` returns `false`, leaving the connection open, while one is. `finalize`,

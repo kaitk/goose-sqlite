@@ -124,8 +124,10 @@ table with the reason, and return to a release once one includes the fix.
    each of which the connection still works; foreign keys enforced by default and
    not when `open` turns them off; and parameter and column indexes and a
    `busy_timeout` past a 32-bit `int`, which fail with `RANGE`, read as NULL, and
-   clamp rather than wrap; and defensive mode and `trusted_schema` off, which keep
-   `writable_schema` off and `sqlite_schema` unwritable. `test/transactions/` checks
+   clamp rather than wrap; defensive mode and `trusted_schema` off, which keep
+   `writable_schema` off and `sqlite_schema` unwritable; and stale handles, a copy of
+   a finalized `Stmt` or a closed `Db`, whose calls fail with `MISUSE` or read as
+   nothing. `test/transactions/` checks
    that a
    transaction commits, rolls back when a call in it fails or it calls `fail`, and
    nests as savepoints: three deep, inside an `exec`'s `BEGIN`, an inner failure
@@ -136,8 +138,8 @@ table with the reason, and return to a release once one includes the fix.
    writer commits while both readers hold read transactions, and each reader sees
    its snapshot until its transaction ends; and four threads insert through one
    shared connection at once, which its mutex keeps sound. `test/compile/` holds the
-   fixtures that
-   must not compile: a call that can fail, and a transaction, outside `run`.
+   fixtures that must not compile: a call that can fail, and a transaction, outside
+   `run`.
 
 ```sh
 scripts/test.sh
@@ -199,6 +201,27 @@ docker run --rm -v "$PWD":/repo:ro debian:trixie-slim sh -c '
 For Linux x64 on an arm64 host, add `--platform linux/amd64` and use the `python:3.12`
 image, which has gcc, git, and curl: the release's `linux-x64` archive then runs under
 emulation. There the tests took 37 s, SQLite's build included (2026-10-19).
+
+### Sanitizers
+
+To run the tests under AddressSanitizer and UndefinedBehaviorSanitizer, point
+`GOOSE_CC` at a script that adds the flags, and `GOOSE_HOME` at a directory of its own,
+so the instrumented builds of SQLite and the runtime stay apart from the usual ones:
+
+```sh
+#!/bin/sh
+exec clang -fsanitize=address,undefined -fno-sanitize=alignment -fno-omit-frame-pointer "$@"
+```
+
+```sh
+UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 GOOSE_CC=/path/to/that/script \
+  GOOSE_HOME=/tmp/goose-asan python3 test/run_tests.py
+```
+
+UBSan otherwise prints and goes on, and the run would pass. `-fno-sanitize=alignment`
+leaves out one report that comes from the C Goose `v2026.2` generates, not the
+package's: a misaligned `int64_t` store in `test/threads/wal_readers.goose`. Every
+test passed this way on macOS on arm64 (2026-10-19).
 
 ## Traps
 
