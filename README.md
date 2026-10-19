@@ -30,7 +30,7 @@ checks that every such call runs inside `run` or a transaction.
 
 ```goose
 import std;
-import sqlite from "github.com/kaitk/goose-sqlite@main";
+import sqlite from "github.com/kaitk/goose-sqlite@v0.0.1";
 
 fn main() {
     let failed = sqlite::run() {
@@ -61,9 +61,9 @@ fn main() {
 goose build notes.goose
 ```
 
-The first build compiles SQLite, which takes 10 s or more; later builds reuse it. No
-version is tagged yet: until one is, import `@main` or a commit. The package needs a C
-compiler, which `goose build` finds, and no other package.
+The first build compiles SQLite, which takes 10 s or more; later builds reuse it. The
+tag `v0.0.1` has everything marked 🟢 above. The package needs a C compiler, which
+`goose build` finds, and no other package.
 
 ## API
 
@@ -77,8 +77,9 @@ All in namespace `sqlite`. Text and blobs go in as `u8[:]` and come out appended
   of the program's own.
 - **`transaction(db) { ... }`** runs the block between `BEGIN` and `COMMIT`, and rolls
   back and returns the error when it fails.
-- **Connections**: `open(path, flags = READ_WRITE | CREATE)`, or `READ_ONLY`, gives a
-  `Db`. `exec(db, sql)` runs statements and discards rows. `close(db)` returns `false`
+- **Connections**: `open(path, flags = READ_WRITE | CREATE, foreign_keys = true)`,
+  or `READ_ONLY`, gives a `Db`. Foreign keys are enforced, as in rusqlite's `bundled`
+  build, unless `foreign_keys` is false. `exec(db, sql)` runs statements and discards rows. `close(db)` returns `false`
   while a statement on it isn't finalized. Also `busy_timeout`, `changes`,
   `last_insert_rowid`, `in_transaction`, and `version`.
 - **Statements**: `prepare(db, sql)` gives a `Stmt`. `bind_i64`, `bind_f64`,
