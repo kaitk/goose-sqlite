@@ -1,7 +1,7 @@
 // The transaction helper: a block that returns commits; one where a call
 // fails, or that calls fail, rolls back and returns the error; and a
-// transaction inside another fails at its BEGIN, leaving the outer one to go
-// on.
+// transaction inside another, a savepoint that commits with the outer one
+// (test/transactions/savepoint.goose has the rest of nesting).
 import std;
 import sqlite from "../../";
 import check from "../";
@@ -43,7 +43,7 @@ fn main() {
             });
             check::that("the outer one goes on", sqlite::in_transaction(db));
         });
-        check::eq("rows, 5 committed", count(db), 3);
+        check::eq("rows, 5 and 6 committed", count(db), 4);
         // A statement on the connection outlives the transaction's ROLLBACK.
         let s = sqlite::prepare(db, "SELECT n FROM t ORDER BY n");
         check::errors("rolls back with a statement open", sqlite::transaction(db) {
@@ -54,7 +54,7 @@ fn main() {
         sqlite::reset(s);
         var ns: u8[>..] = [];
         while sqlite::step(s) { format(ns, sqlite::column_i64(s, 0), " "); }
-        check::text("rows left", ns, "1 2 5 ");
+        check::text("rows left", ns, "1 2 5 6 ");
         sqlite::finalize(s);
         check::that("closed", sqlite::close(db));
     };

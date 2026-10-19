@@ -78,16 +78,32 @@ connection open, until every statement on it is finalized.
 
 `sqlite::transaction(db) { ... }` runs `BEGIN`, the block, and `COMMIT`. When a call in
 the block fails, the block calls `fail`, or the `COMMIT` fails, it rolls back and
-returns the error; otherwise it returns an empty array. It's a `run` of its own, so it
-can be called inside a `run` or outside one.
+returns the error; otherwise it returns an empty array. It must be called inside a
+`run` or another transaction, as the calls in its block are: nested, it can fail the
+enclosing block (below).
 
 `BEGIN` is deferred: the first read takes the snapshot, and the first write the write
 lock. That suits one writer per database. Where several connections write, a
 transaction that reads and then writes can fail with `BUSY` when it tries to take the
 lock; `busy_timeout` makes a connection wait for a lock rather than fail at once.
 
-A transaction can't hold another: the inner one fails at its `BEGIN` and returns the
-error, and the outer one goes on.
+A transaction inside another, whether `transaction` or `exec(db, "BEGIN")` began the
+outer one, is a savepoint: `SAVEPOINT goose_sqlite`, the block, and
+`RELEASE goose_sqlite`, which keeps the inner block's changes for the outer `COMMIT`.
+When the inner block or its `RELEASE` fails, `ROLLBACK TO goose_sqlite` undoes only
+the inner block's changes, the inner `transaction` returns the error, and the outer
+transaction goes on. When the outer one then fails, it undoes the inner changes too.
+Transactions nest to any depth, each undoing only its own. Don't name a savepoint of
+your own `goose_sqlite`.
+
+Some errors make SQLite end the whole transaction, savepoints and all: an `OR ROLLBACK`
+conflict clause, a full disk, or an I/O error. After one inside a nested transaction,
+the inner `transaction` doesn't return the error: it fails the enclosing block with it,
+as a call that fails does, so the outer block stops at the inner call rather than go
+on outside any transaction, where each later statement would commit on its own. The
+outer `transaction` returns the error, with nothing left to roll back. The error goes
+to the innermost `run` around the inner call, which is the outer transaction's unless
+the program wraps the inner call in a `run` of its own.
 
 ## Threads
 

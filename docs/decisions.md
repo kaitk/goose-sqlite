@@ -81,12 +81,38 @@ with its reason and the trade-off that matters. How the package works, for its u
   `close` returns `false`, leaving the connection open, while one is. `finalize`,
   `reset`, `clear_bindings`, and `close` never fail, so they run anywhere, for
   cleanup (2026-10-19).
-- **The transaction helper is deferred, and doesn't nest.** `sqlite::transaction`
-  runs `BEGIN`, the block, and `COMMIT`, and rolls back when the block or the `COMMIT`
-  fails. A deferred `BEGIN` suits one writer per database, the layout above; with
-  several writers, `BEGIN IMMEDIATE` avoids a deadlock that ends in `BUSY`. A
-  transaction inside another fails at its `BEGIN` and leaves the outer one going.
-  Savepoints wait for a program that needs them (2026-10-19).
+- **The transaction helper is deferred.** `sqlite::transaction` runs `BEGIN`, the
+  block, and `COMMIT`, and rolls back when the block or the `COMMIT` fails. A deferred
+  `BEGIN` suits one writer per database, the layout above; with several writers,
+  `BEGIN IMMEDIATE` avoids a deadlock that ends in `BUSY` (2026-10-19).
+- **A transaction inside another is a savepoint.** When the connection is already in a
+  transaction, whether `transaction` or `exec(db, "BEGIN")` began it, `transaction`
+  runs `SAVEPOINT goose_sqlite`, the block, and `RELEASE goose_sqlite`. When the block
+  or the `RELEASE` fails, it runs `ROLLBACK TO goose_sqlite` and `RELEASE goose_sqlite`,
+  which undo only the inner block's changes, and returns the error; the outer
+  transaction goes on, and its own failure undoes the inner block's released changes
+  too. This is what Drizzle and other ORMs do, so a function that opens a transaction
+  can be called from inside another. goose-postgres's task 004 takes the same rule,
+  where a second `BEGIN` would only warn and go on inside the first transaction, so a
+  program's transactions behave the same on either database.
+
+  One name serves every depth: SQLite's `ROLLBACK TO` and `RELEASE` take the most
+  recent savepoint of a name, which is the innermost transaction's. Numbering by
+  depth, as Drizzle does, would need a counter per connection, and `Db` is a flat
+  handle with none. A program's own savepoint named `goose_sqlite` would meet the
+  package's.
+
+  After an error for which SQLite ends the whole transaction, such as an
+  `OR ROLLBACK` conflict or a full disk, the savepoint is gone with it, and the inner
+  `transaction` fails the enclosing block with the error rather than return it. Were
+  the outer block to go on, each later statement would run outside any transaction
+  and commit on its own: the partial commit a transaction exists to prevent. ORMs
+  avoid it because the error throws through the outer block too. The trade-off:
+  `transaction` can now fail its caller, so it compiles only inside a `run` or another
+  transaction, where before it also compiled outside one. Most programs already have
+  one there, since `open` needs it too; a thread handed a `Db` wraps its transaction
+  in a `run` (2026-10-19). This replaces "The transaction helper is
+  deferred, and doesn't nest" of 2026-10-19, where the inner `BEGIN` failed.
 
 ## Proposed
 

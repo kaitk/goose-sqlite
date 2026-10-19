@@ -20,9 +20,9 @@ checks that every such call runs inside `run` or a transaction.
 | 🟢 | Statements | Prepare, bind integers, reals, text, blobs, and NULL by number or name, step, read columns by type, reset, and finalize. |
 | 🟢 | Errors | SQLite's extended result code and message, through `sqlite::run`. |
 | 🟢 | Transactions | `sqlite::transaction`, which commits, or rolls back and returns the error. |
+| 🟢 | Savepoints | A transaction inside another is a savepoint: its failure undoes only its own changes. |
 | 🟢 | Threads | One writer and read-only WAL readers, each a thread with its own connection. |
 | 🟡 | Platforms | Tested on macOS (arm64) and Linux (arm64, and x64 under emulation); not yet on Windows. |
-| 🔴 | Savepoints | A transaction inside another fails at its `BEGIN`. |
 | 🔴 | Migrations | Numbered SQL files applied in order, once each. |
 | 🔴 | Extensions | FTS5, R*Tree, and the math functions aren't built in. |
 
@@ -30,7 +30,7 @@ checks that every such call runs inside `run` or a transaction.
 
 ```goose
 import std;
-import sqlite from "github.com/kaitk/goose-sqlite@v0.0.1";
+import sqlite from "github.com/kaitk/goose-sqlite@v0.0.2";
 
 fn main() {
     let failed = sqlite::run() {
@@ -62,7 +62,7 @@ goose build notes.goose
 ```
 
 The first build compiles SQLite, which takes 10 s or more; later builds reuse it. The
-tag `v0.0.1` has everything marked 🟢 above. The package needs a C compiler, which
+tag `v0.0.2` has everything marked 🟢 above. The package needs a C compiler, which
 `goose build` finds, and no other package.
 
 ## API
@@ -76,7 +76,9 @@ All in namespace `sqlite`. Text and blobs go in as `u8[:]` and come out appended
   `CONSTRAINT`. `fail(message)` or `fail(code, message)` ends the block with an error
   of the program's own.
 - **`transaction(db) { ... }`** runs the block between `BEGIN` and `COMMIT`, and rolls
-  back and returns the error when it fails.
+  back and returns the error when it fails. Inside a transaction already, it runs the
+  block in a savepoint, whose failure undoes only the block's changes and leaves the
+  outer transaction going. It runs inside `run` or another transaction.
 - **Connections**: `open(path, flags = READ_WRITE | CREATE, foreign_keys = true)`,
   or `READ_ONLY`, gives a `Db`. Foreign keys are enforced, as in rusqlite's `bundled`
   build, unless `foreign_keys` is false. `exec(db, sql)` runs statements and discards rows. `close(db)` returns `false`

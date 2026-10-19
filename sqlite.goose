@@ -110,23 +110,35 @@ fn run<F>() -> Error[] {
 // Runs F in a transaction on db: BEGIN, then F, then COMMIT. When F, or the
 // COMMIT, fails, rolls back and returns the error; else returns an empty
 // array. BEGIN is deferred: a read takes the snapshot, and the first write
-// takes the write lock. A transaction can't hold another: the inner BEGIN
-// fails.
+// takes the write lock. Inside a transaction already, F runs in a savepoint
+// instead: RELEASE keeps its changes for the outer COMMIT, and a failure rolls
+// back only F's changes and leaves the outer transaction going. When SQLite
+// has ended the whole transaction after the failure, the error fails the
+// enclosing run instead, so the outer block goes no further.
 fn transaction<F>(db: Db) -> Error[] {
-    return run() {
-        exec(db, "BEGIN");
+    let nested = !autocommit_c(db.id);
+    // One name serves every depth: ROLLBACK TO and RELEASE take the most
+    // recent savepoint of the name, which is the innermost transaction's.
+    let failed = run() {
+        exec(db, if nested { "SAVEPOINT goose_sqlite" } else { "BEGIN" });
         for e in run(F) {
-            rollback(db);
+            rollback(db, nested);
             fail(e.code, e.message);
         }
-        let rc = exec_c(db.id, "COMMIT");
+        let rc = exec_c(db.id, if nested { "RELEASE goose_sqlite" } else { "COMMIT" });
         if rc != OK {
             var msg: u8[>..] = [];
             message(db.id, rc, msg);
-            rollback(db);
+            rollback(db, nested);
             fail(rc, msg);
         }
     };
+    // Going on would run the outer block's later statements outside any
+    // transaction, each committing on its own.
+    if nested && autocommit_c(db.id) {
+        for e in failed { fail(e.code, e.message); }
+    }
+    return failed;
 }
 
 // Leaves the innermost run, or a transaction, which rolls back, with an
@@ -280,8 +292,16 @@ fn check_stmt(s, rc: i32) {
     check(db_of_c(s.id), rc);
 }
 
-// Rolls back what db's transaction holds, if anything: SQLite has already
-// rolled back after some errors.
-fn rollback(db: Db) {
-    if !autocommit_c(db.id) { exec_c(db.id, "ROLLBACK"); }
+// Rolls back what db's transaction holds, or with savepoint what the innermost
+// savepoint holds, and removes the savepoint. Does nothing outside a
+// transaction: SQLite has already rolled back the whole of it after some
+// errors.
+fn rollback(db: Db, savepoint: bool) {
+    if autocommit_c(db.id) { return; }
+    if savepoint {
+        exec_c(db.id, "ROLLBACK TO goose_sqlite");
+        exec_c(db.id, "RELEASE goose_sqlite");
+    } else {
+        exec_c(db.id, "ROLLBACK");
+    }
 }

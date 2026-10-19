@@ -124,11 +124,14 @@ table with the reason, and return to a release once one includes the fix.
    each of which the connection still works; and foreign keys enforced by default and
    not when `open` turns them off. `test/transactions/` checks that a
    transaction commits, rolls back when a call in it fails or it calls `fail`, and
-   fails at the `BEGIN` of one inside another. `test/threads/` runs one writer and
+   nests as savepoints: three deep, inside an `exec`'s `BEGIN`, an inner failure
+   undoing only its own rows, an outer failure undoing the inner ones, a statement
+   left open across `ROLLBACK TO`, and an error after which SQLite ends the whole
+   transaction, which stops the outer block. `test/threads/` runs one writer and
    two read-only WAL readers, each on its own thread with its own connection: the
    writer commits while both readers hold read transactions, and each reader sees
-   its snapshot until its transaction ends. `test/compile/` holds the fixture that
-   must not compile: a call that can fail, outside `run`.
+   its snapshot until its transaction ends. `test/compile/` holds the fixtures that
+   must not compile: a call that can fail, and a transaction, outside `run`.
 
 ```sh
 scripts/test.sh
