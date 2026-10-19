@@ -47,7 +47,24 @@ an error needs no `run`.
 
 Goose has no destructors, so a statement that is open when an error leaves `run` stays
 open until the program finalizes it, and `close` returns `false`, leaving the
-connection open, until every statement on it is finalized.
+connection open, until every statement on it is finalized. Keep the handles where the
+cleanup can reach them: declare them outside the `run`, prepare inside it, and
+finalize after it, whether it failed or not. Finalizing a `Stmt {}` never prepared
+does nothing:
+
+```goose
+var db = sqlite::Db {};
+var s = sqlite::Stmt {};
+let failed = sqlite::run() {
+    db = sqlite::open(path);
+    s = sqlite::prepare(db, "INSERT INTO t (n) VALUES (?)");
+    sqlite::bind_i64(s, 1, 7);
+    while sqlite::step(s) {}
+};
+sqlite::finalize(s);
+sqlite::close(db);
+for e in failed { print(e.code, ": ", e.message); }
+```
 
 ## Connections and statements
 
@@ -61,7 +78,9 @@ connection open, until every statement on it is finalized.
   triggers. Pragmas such as `journal_mode = WAL` are set with `exec`; SQLite's
   defaults apply otherwise.
 - `sqlite::exec(db, sql)` runs every statement in `sql` and discards rows: a schema,
-  or pragmas.
+  or pragmas. It takes no parameters, so never build its SQL from values a user or
+  another system supplied: prepare a statement and bind them, which SQLite never
+  reads as SQL.
 - `sqlite::prepare(db, sql)` prepares one statement, a `sqlite::Stmt`. Trailing spaces
   and comments are allowed; a second statement is a `MISUSE` error.
 - `bind_i64`, `bind_f64`, `bind_text`, `bind_blob`, and `bind_null` bind parameter
@@ -72,6 +91,13 @@ connection open, until every statement on it is finalized.
 - `sqlite::step(s)` runs to the next row and returns `true` there, or `false` when the
   statement is done. `reset` makes it ready to run again, keeping its bindings, and
   `clear_bindings` sets them to NULL.
+- Step a statement until `step` returns `false`, above all an `INSERT`, `UPDATE`, or
+  `DELETE`, and one with `RETURNING`. Some errors come only as the statement finishes,
+  after its last row: a deferred foreign key, or a `BUSY` at the commit of a statement
+  outside a transaction. `reset` and `finalize` never fail, so they report nothing, and
+  resetting a statement before it is done can undo its change without a word
+  ([SQLite's `sqlite3_reset`](https://sqlite.org/c3ref/reset.html)).
+  `test/statements/step_to_done.goose` shows both.
 - Column `i` of the current row, counting from 0: `column_type` (`INTEGER`, `FLOAT`,
   `TEXT`, `BLOB`, or `NULL`), `is_null`, `column_i64`, `column_f64`, and `column_text`
   and `column_blob`, which append the bytes to a `u8[>..]` the caller owns. A value of
@@ -97,6 +123,16 @@ returns the error; otherwise it returns an empty array. It must be called inside
 `run` or another transaction, as the calls in its block are: nested, it can fail the
 enclosing block (below).
 
+**Never `return` out of a transaction's block,** nor leave it by any other way than its
+end, a call that fails, or `sqlite::fail`. A block's `return` returns from the
+function around the block, past the `COMMIT` and the `ROLLBACK` both, and Goose has no
+way to run them on the way out ([findings](goose-findings.md#a-function-that-takes-a-block-cant-run-cleanup-when-the-block-returns-out)).
+The connection then stays in the transaction: every later `transaction` on it is a
+savepoint inside that one, and nothing commits until the program ends it with
+`exec(db, "COMMIT")` or `"ROLLBACK"`. To leave early, set a variable and let the block
+end, or call `fail`, which rolls back. `test/transactions/return_out.goose` shows the
+mistake.
+
 `BEGIN` is deferred: the first read takes the snapshot, and the first write the write
 lock. That suits one writer per database. Where several connections write, a
 transaction that reads and then writes can fail with `BUSY` when it tries to take the
@@ -108,8 +144,7 @@ outer one, is a savepoint: `SAVEPOINT goose_sqlite`, the block, and
 When the inner block or its `RELEASE` fails, `ROLLBACK TO goose_sqlite` undoes only
 the inner block's changes, the inner `transaction` returns the error, and the outer
 transaction goes on. When the outer one then fails, it undoes the inner changes too.
-Transactions nest to any depth, each undoing only its own. Don't name a savepoint of
-your own `goose_sqlite`.
+Transactions nest to any depth, each undoing only its own.
 
 Some errors make SQLite end the whole transaction, savepoints and all: an `OR ROLLBACK`
 conflict clause, a full disk, or an I/O error. After one inside a nested transaction,
@@ -119,6 +154,22 @@ on outside any transaction, where each later statement would commit on its own. 
 outer `transaction` returns the error, with nothing left to roll back. The error goes
 to the innermost `run` around the inner call, which is the outer transaction's unless
 the program wraps the inner call in a `run` of its own.
+
+What `transaction` doesn't guard against:
+
+- **An error the block catches itself is committed around.** A `run` inside the block
+  catches the error of a call in it, so `transaction` never sees it, and commits
+  everything else the block did, before and after the failed call. SQLite undoes only
+  the failed statement's own changes. A block that catches an error and goes on
+  commits the rest, which is what it asked for; one that means to give up calls
+  `fail`, or uses a nested `transaction`, whose failure undoes the inner block's
+  changes.
+- **A savepoint of the program's own named `goose_sqlite` meets the package's.**
+  `ROLLBACK TO` and `RELEASE` take the most recent savepoint of a name, so with the
+  program's open inside a nested `transaction`, the package rolls back only to the
+  program's savepoint and releases that one, leaving its own open. Name your
+  savepoints anything else.
+- **A `return` out of the block**, above.
 
 ## Threads
 

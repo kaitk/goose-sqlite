@@ -1,0 +1,8 @@
+a row: ok
+step until done: 787 FOREIGN KEY constraint failed
+children: 0
+the first row: ok
+its id: 1
+children after a reset at the first row: 0
+closed: ok
+run: no error

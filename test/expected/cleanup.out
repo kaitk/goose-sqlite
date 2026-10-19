@@ -1,0 +1,2 @@
+run: 1299 NOT NULL constraint failed: t.n
+closed after the error: ok

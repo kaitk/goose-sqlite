@@ -1,0 +1,9 @@
+still in a transaction after the return: ok
+the next transaction, a savepoint: no error
+still in a transaction after it: ok
+rows this connection sees: 2
+rows another connection sees: 0
+out of the transaction: ok
+closed: ok
+other closed: ok
+run: no error

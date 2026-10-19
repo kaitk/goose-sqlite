@@ -118,7 +118,9 @@ fn run<F>() -> Error[] {
 // instead: RELEASE keeps its changes for the outer COMMIT, and a failure rolls
 // back only F's changes and leaves the outer transaction going. When SQLite
 // has ended the whole transaction after the failure, the error fails the
-// enclosing run instead, so the outer block goes no further.
+// enclosing run instead, so the outer block goes no further. F must not
+// return out of its block: that skips COMMIT and ROLLBACK both, and leaves db
+// in the transaction (docs/architecture.md, "Transactions").
 fn transaction<F>(db: Db) -> Error[] {
     let nested = !autocommit_c(db.id);
     // One name serves every depth: ROLLBACK TO and RELEASE take the most
@@ -256,7 +258,8 @@ fn parameter(s: Stmt, name) -> i64 {
 // The number of s's parameters: the largest index, when any are numbered.
 fn parameter_count(s: Stmt) -> i64 { bind_count_c(s.id) }
 
-// Runs s to its next row: true at a row, false when it is done.
+// Runs s to its next row: true at a row, false when it is done. Step until
+// it is done: some errors come only then, and reset reports none.
 fn step(s) -> bool {
     let rc = step_c(s.id);
     if rc == ROW { return true; }

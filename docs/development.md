@@ -117,29 +117,31 @@ table with the reason, and return to a release once one includes the fix.
 
 1. `goose check` of `sqlite.goose` alone, and of each root file under `test/`.
 2. `test/run_tests.py`: the tests under `test/<area>/` ([Run the tests](#run-the-tests)).
-   `test/statements/` checks a schema created and queried, with numbered and named
-   parameters and a reset; each bound type read back with the type SQLite stored
-   (`i64` at both ends, reals, UTF-8 text, text holding a NUL, blobs of every byte
-   value, empty text and blobs, and NULL); and the errors each call fails with, after
-   each of which the connection still works; foreign keys enforced by default and
-   not when `open` turns them off; and parameter and column indexes and a
-   `busy_timeout` past a 32-bit `int`, which fail with `RANGE`, read as NULL, and
-   clamp rather than wrap; defensive mode and `trusted_schema` off, which keep
-   `writable_schema` off and `sqlite_schema` unwritable; and stale handles, a copy of
-   a finalized `Stmt` or a closed `Db`, whose calls fail with `MISUSE` or read as
-   nothing. `test/transactions/` checks
-   that a
-   transaction commits, rolls back when a call in it fails or it calls `fail`, and
-   nests as savepoints: three deep, inside an `exec`'s `BEGIN`, an inner failure
-   undoing only its own rows, an outer failure undoing the inner ones, a statement
-   left open across `ROLLBACK TO`, and an error after which SQLite ends the whole
-   transaction, which stops the outer block. `test/threads/` runs one writer and
-   two read-only WAL readers, each on its own thread with its own connection: the
-   writer commits while both readers hold read transactions, and each reader sees
-   its snapshot until its transaction ends; and four threads insert through one
-   shared connection at once, which its mutex keeps sound. `test/compile/` holds the
-   fixtures that must not compile: a call that can fail, and a transaction, outside
-   `run`.
+   - `test/statements/`: a schema created and queried, with numbered and named
+     parameters and a reset; each bound type read back with the type SQLite stored
+     (`i64` at both ends, reals, UTF-8 text, text holding a NUL, blobs of every byte
+     value, empty text and blobs, and NULL); the errors each call fails with, after
+     each of which the connection still works; foreign keys enforced by default and
+     not when `open` turns them off; parameter and column indexes and a
+     `busy_timeout` past a 32-bit `int`, which fail with `RANGE`, read as NULL, and
+     clamp rather than wrap; defensive mode and `trusted_schema` off, which keep
+     `writable_schema` off and `sqlite_schema` unwritable; stale handles, a copy of a
+     finalized `Stmt` or a closed `Db`, whose calls fail with `MISUSE` or read as
+     nothing; an error that only stepping to the end reports, and the insert a reset
+     at the first row loses; and the README's cleanup pattern on an error path.
+   - `test/transactions/`: a transaction commits, rolls back when a call in it fails
+     or it calls `fail`, and nests as savepoints: three deep, inside an `exec`'s
+     `BEGIN`, an inner failure undoing only its own rows, an outer failure undoing the
+     inner ones, a statement left open across `ROLLBACK TO`, and an error after which
+     SQLite ends the whole transaction, which stops the outer block. A `return` out of
+     the block leaves the connection in the transaction, and nothing commits after.
+   - `test/threads/`: one writer and two read-only WAL readers, each on its own thread
+     with its own connection: the writer commits while both readers hold read
+     transactions, and each reader sees its snapshot until its transaction ends. Four
+     threads insert through one shared connection at once, which its mutex keeps
+     sound.
+   - `test/compile/`: the fixtures that must not compile: a call that can fail, and a
+     transaction, outside `run`.
 
 ```sh
 scripts/test.sh
