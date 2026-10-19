@@ -30,7 +30,7 @@ checks that every such call runs inside `run` or a transaction.
 
 ```goose
 import std;
-import sqlite from "github.com/kaitk/goose-sqlite@v0.0.2";
+import sqlite from "github.com/kaitk/goose-sqlite@v0.0.3";
 
 fn main() {
     let failed = sqlite::run() {
@@ -62,8 +62,42 @@ goose build notes.goose
 ```
 
 The first build compiles SQLite, which takes 10 s or more; later builds reuse it. The
-tag `v0.0.2` has everything marked 🟢 above. The package needs a C compiler, which
+tag `v0.0.3` has everything marked 🟢 above. The package needs a C compiler, which
 `goose build` finds, and no other package.
+
+## Rules for safe use
+
+- **Bind values; don't build SQL from them.** `exec` takes no parameters, so text a
+  user or another system supplied never goes into its SQL. Prepare a statement with
+  `?` or `:name` and bind the value, which SQLite never reads as SQL.
+- **Never `return` out of a `transaction` block.** A `return` in the block returns from
+  the enclosing function past both `COMMIT` and `ROLLBACK`, and leaves the connection
+  in the transaction, where every later `transaction` is a savepoint that never
+  commits. Let the block end, or call `fail` to roll back.
+- **Step a statement until `step` returns `false`.** Some errors, such as a deferred
+  foreign key, come only as the statement finishes, and `reset` and `finalize` report
+  none. Resetting an `INSERT ... RETURNING` after its first row can undo the insert
+  without a word.
+- **Finalize statements on the error path too.** Declare the handles outside `run`,
+  and finalize and close after it, whether it failed or not; a `Stmt {}` never
+  prepared finalizes as a no-op:
+
+  ```goose
+  var db = sqlite::Db {};
+  var s = sqlite::Stmt {};
+  let failed = sqlite::run() {
+      db = sqlite::open("app.db");
+      s = sqlite::prepare(db, "INSERT INTO note (text) VALUES (?)");
+      sqlite::bind_text(s, 1, text);
+      while sqlite::step(s) {}
+  };
+  sqlite::finalize(s);
+  sqlite::close(db);
+  for e in failed { print("error ", e.code, ": ", e.message); }
+  ```
+
+- **One connection per thread.** A connection's mutex keeps a shared one sound, but
+  its threads then take turns.
 
 ## API
 
@@ -81,17 +115,21 @@ All in namespace `sqlite`. Text and blobs go in as `u8[:]` and come out appended
   outer transaction going. It runs inside `run` or another transaction.
 - **Connections**: `open(path, flags = READ_WRITE | CREATE, foreign_keys = true)`,
   or `READ_ONLY`, gives a `Db`. Foreign keys are enforced, as in rusqlite's `bundled`
-  build, unless `foreign_keys` is false. `exec(db, sql)` runs statements and discards rows. `close(db)` returns `false`
-  while a statement on it isn't finalized. Also `busy_timeout`, `changes`,
-  `last_insert_rowid`, `in_transaction`, and `version`.
+  build, unless `foreign_keys` is false; SQLite's defensive mode is on and
+  `trusted_schema` off. `exec(db, sql)` runs statements and discards rows. `close(db)`
+  returns `false` while a statement on it isn't finalized. Also `busy_timeout`,
+  `changes`, `last_insert_rowid`, `in_transaction`, and `version`.
 - **Statements**: `prepare(db, sql)` gives a `Stmt`. `bind_i64`, `bind_f64`,
   `bind_text`, `bind_blob`, and `bind_null` bind parameter `i`, from 1;
   `parameter(s, ":name")` and `parameter_count(s)`. `step(s)` returns `true` at a row
-  and `false` when done. `reset`, `clear_bindings`, and `finalize`.
+  and `false` when done. `reset`, `clear_bindings`, and `finalize`. Once `finalize` or
+  `close` frees a handle, every copy of it is stale, and a call through one fails with
+  `MISUSE`.
 - **Columns**, from 0: `column_count`, `column_name`, `column_type`, `is_null`,
   `column_i64`, `column_f64`, `column_text(s, i, out)`, and `column_blob(s, i, out)`.
-- **Threads**: a `Db` and its statements belong to one thread at a time; each thread
-  opens its own connection. The package starts no threads.
+- **Threads**: each thread opens its own connection, and keeps its statements. Every
+  connection is opened with its mutex on, so one used by two threads at once stays
+  sound. The package starts no threads.
 
 ## Build times
 
