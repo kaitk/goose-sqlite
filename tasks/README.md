@@ -45,6 +45,6 @@ for the latest measurements.
 
 ## Order
 
-Task 001, the bindings, is the only task so far. It works on macOS and Linux; Windows
-remains.
+Task 001, the bindings, comes first. It works on macOS and Linux; Windows remains.
+Task 002, Turso as a second engine behind the same API, follows it.
 
