@@ -134,7 +134,9 @@ table with the reason, and return to a release once one includes the fix.
    transaction, which stops the outer block. `test/threads/` runs one writer and
    two read-only WAL readers, each on its own thread with its own connection: the
    writer commits while both readers hold read transactions, and each reader sees
-   its snapshot until its transaction ends. `test/compile/` holds the fixtures that
+   its snapshot until its transaction ends; and four threads insert through one
+   shared connection at once, which its mutex keeps sound. `test/compile/` holds the
+   fixtures that
    must not compile: a call that can fail, and a transaction, outside `run`.
 
 ```sh

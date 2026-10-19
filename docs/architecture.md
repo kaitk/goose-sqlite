@@ -119,12 +119,14 @@ SQLite's calls block until SQLite is done, and the package starts no threads. A 
 runs it on a thread of its own: in goose-rest, a lane, never a worker that serves
 requests.
 
-A connection, and the statements prepared on it, belong to one thread at a time. SQLite
-is built in multi-thread mode (`SQLITE_THREADSAFE=2`), which leaves out the mutex each
-connection would otherwise take on every call, so two threads that use one connection
-at once corrupt it. `Db` and `Stmt` hold the address of SQLite's object as an `i64`, so
-a handle can cross `thread_spawn` or a queue, to hand a connection over; it mustn't be
-used on the old thread after.
+Give each thread a connection of its own, and keep the statements prepared on it on
+that thread. Every connection is opened serialized (`SQLITE_OPEN_FULLMUTEX`): it takes
+its mutex on each call, so two threads that do use one connection at once wait for
+each other, and SQLite's memory stays sound, but they take turns and gain nothing.
+The mutex costs about 10 ns a call, uncontended ([results](results.md#connection-mutex)).
+A `Db` or `Stmt` is a flat handle that can cross `thread_spawn` or a queue, to hand a
+connection over. Closing a connection or finalizing a statement while another thread
+is inside a call on it is still a race the package doesn't guard.
 
 The layout the package is built for is one writer and several readers on a database
 in WAL mode, each a thread with a connection of its own: the writer opens the file
@@ -140,7 +142,7 @@ The amalgamation is SQLite 3.54.1, unchanged ([development](development.md#sqlit
 
 | Option | Effect |
 |---|---|
-| `SQLITE_THREADSAFE=2` | Connections on several threads, each used by one at a time |
+| `SQLITE_THREADSAFE=2` | Connections on several threads; the shim opens each with its mutex on (`SQLITE_OPEN_FULLMUTEX`) |
 | `SQLITE_DQS=0` | A double-quoted string is an identifier only, never a string literal |
 | `SQLITE_DEFAULT_MEMSTATUS=0` | No memory statistics, for faster allocation |
 | `SQLITE_DEFAULT_WAL_SYNCHRONOUS=1` | `synchronous = NORMAL` in WAL mode: a power loss can lose the last commits, never the database |

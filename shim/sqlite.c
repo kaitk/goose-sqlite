@@ -59,7 +59,10 @@ int32_t sq_open(sq_bytes path, int32_t flags, int64_t *db) {
     char *p = c_string(path);
     if (!p) return has_nul(path) ? SQLITE_CANTOPEN : SQLITE_NOMEM;
     sqlite3 *h = NULL;
-    rc = sqlite3_open_v2(p, &h, flags | SQLITE_OPEN_EXRESCODE, NULL);
+    /* FULLMUTEX makes this connection serialized under SQLITE_THREADSAFE=2: it
+       takes its mutex on each call, so two threads that use it at once wait
+       for each other rather than corrupt it. */
+    rc = sqlite3_open_v2(p, &h, flags | SQLITE_OPEN_EXRESCODE | SQLITE_OPEN_FULLMUTEX, NULL);
     free(p);
     *db = (int64_t)(intptr_t)h;
     /* SQLite's hardening for a database file that may come from elsewhere

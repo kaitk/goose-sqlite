@@ -41,9 +41,8 @@ with its reason and the trade-off that matters. How the package works, for its u
   `sqlite3_initialize` before each open, as `SQLITE_OMIT_AUTOINIT` requires. The
   departures (2026-10-19):
   - `SQLITE_THREADSAFE=2`, not 0: a program opens connections on several threads, which
-    0 forbids. 2, multi-thread mode, drops the mutex on each connection that 1 keeps,
-    which is safe while each connection belongs to one thread at a time, this
-    package's rule.
+    0 forbids. 2 compiles SQLite's mutexes in and leaves each connection's off by
+    default; the shim's open turns it on for every connection (next decision).
   - `SQLITE_MAX_EXPR_DEPTH` keeps its default of 1000, not 0: the depth check turns an
     expression nested too deep into an error rather than a stack overflow, and a
     Goose worker thread runs on the platform's default native stack, 512 KB on macOS
@@ -52,7 +51,22 @@ with its reason and the trade-off that matters. How the package works, for its u
   The additions: `SQLITE_OMIT_LOAD_EXTENSION`, since a program loads no SQLite
   extension at run time and so needs no `dlopen`; and `SQLITE_MAX_WORKER_THREADS=0`,
   since the package starts no threads, and SQLite's sorter would otherwise be allowed
-  to. `SQLITE_DEFAULT_FOREIGN_KEYS=1` is the next decision's.
+  to. `SQLITE_DEFAULT_FOREIGN_KEYS=1` is a later decision's.
+- **Every connection is serialized: its mutex is on.** The shim opens each connection
+  with `SQLITE_OPEN_FULLMUTEX`, so it takes its mutex on each call, and two threads
+  that use one `Db` or its statements at once wait for each other rather than corrupt
+  SQLite's memory. A `Db` is a flat handle that crosses `thread_spawn` and queues, so
+  nothing stops a program from using it on two threads, and the compiler can't check
+  the one-thread rule. `SQLITE_THREADSAFE=2` stays: SQLite's `openDatabase` takes
+  `SQLITE_OPEN_FULLMUTEX` whenever the mutexes are compiled in, which 2 does, so the flag
+  alone gives each connection what `SQLITE_THREADSAFE=1` would make the default. One
+  connection per thread stays the recommended layout: the mutex makes sharing safe, not
+  fast, since the threads then take turns. The cost is an uncontended mutex per call:
+  about 10 ns a call on an M1 Pro under macOS and 5 ns under Linux in Docker, against
+  about 7 ns for a call without it ([results](results.md#connection-mutex)), and nothing
+  next to a query that reads a page. This replaces the multi-thread mode of
+  `SQLITE_THREADSAFE=2`'s entry of 2026-10-19, where a connection had no mutex and two
+  threads using it at once corrupted it (2026-10-19).
 - **Foreign keys are enforced by default, and a connection can turn them off.**
   `sqlite.build` passes `SQLITE_DEFAULT_FOREIGN_KEYS=1`, as rusqlite's `bundled` build,
   which snowtime-native uses, does, so a schema's `REFERENCES` hold without a pragma
