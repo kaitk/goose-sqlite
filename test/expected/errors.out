@@ -1,0 +1,19 @@
+open a missing file read-only: 14 unable to open database file
+open: no error
+syntax: 1 near "SELEC": syntax error
+no table: 1 no such table: missing
+two statements: 21 prepare: more than one statement; exec runs several
+no statement: 21 prepare: no statement
+empty: 21 prepare: no statement
+a NUL in exec: 21 bad parameter or other API misuse
+constraint: 2067 UNIQUE constraint failed: t.n
+inner: 1299 NOT NULL constraint failed: t.n
+not null, from step: -1 the program's own error
+inner: 25 column index out of range
+no name: 25 no parameter :x
+bind out of range: no error
+primary of 2067: 19
+rows: 1
+close with a statement open fails: ok
+closed: ok
+still works: no error

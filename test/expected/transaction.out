@@ -1,0 +1,17 @@
+inside, in a transaction: ok
+commits: no error
+rows: 2
+a constraint fails: 2067 UNIQUE constraint failed: t.n
+after, not in a transaction: ok
+rows, 3 rolled back: 2
+rows inside: 3
+the block fails: -1 changed my mind
+rows, 4 rolled back: 2
+inner: 1 cannot start a transaction within a transaction
+the outer one goes on: ok
+a transaction inside another: no error
+rows, 5 committed: 3
+rolls back with a statement open: -1 stop
+rows left: 1 2 5 
+closed: ok
+run: no error

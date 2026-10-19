@@ -1,0 +1,25 @@
+1 i64 max: 9223372036854775807
+1 type: 1
+2 i64 min: -9223372036854775808
+3 f64 -0.125: ok
+3 type: 2
+4 f64 1e300: ok
+5 text: päev, 日
+5 type: 3
+6 text with a NUL: ok
+7 empty text's length: 0
+7 type: 3
+8 blob of bytes 0 to 255: ok
+8 type: 4
+9 empty blob's length: 0
+9 type: 4
+10 null: ok
+10 as i64: 0
+10 as text's length: 0
+11 cleared id: 11
+11 cleared x: ok
+1 id as text: 1
+1 id as f64: ok
+rows: 11
+closed: ok
+run: no error

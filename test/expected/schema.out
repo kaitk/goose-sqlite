@@ -1,0 +1,16 @@
+parameters: 2
+insert alpha steps to done: ok
+alpha's rowid: 1
+rows changed: 1
+insert beta steps to done: ok
+beta's rowid: 2
+rows changed: 1
+insert gamma steps to done: ok
+gamma's rowid: 3
+rows changed: 1
+columns: id, name, hours
+row: 3 gamma 4.5
+row: 2 beta 3.0
+rows after a reset: 2
+closed: ok
+run: no error

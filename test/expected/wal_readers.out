@@ -1,0 +1,11 @@
+journal mode: wal
+write while both read: no error
+rows the writer sees: 11
+reader 0, step 1: 1 rows
+reader 0, step 2: 1 rows
+reader 0, step 3: 11 rows
+reader 1, step 1: 1 rows
+reader 1, step 2: 1 rows
+reader 1, step 3: 11 rows
+closed: ok
+run: no error
