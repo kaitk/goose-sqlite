@@ -46,5 +46,6 @@ for the latest measurements.
 ## Order
 
 Task 001, the bindings, comes first. It works on macOS and Linux; Windows remains.
-Task 002, Turso as a second engine behind the same API, follows it.
+Task 002, Turso as a second engine behind the same API, follows it. Task 003, the
+transaction block, is settled together with goose-postgres's task 004.
 
