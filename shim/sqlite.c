@@ -22,6 +22,11 @@ _Static_assert(sizeof(sq_bytes) == sizeof(void *) + 8, "a Goose slice is { data,
 #define DB(h) ((sqlite3 *)(intptr_t)(h))
 #define STMT(h) ((sqlite3_stmt *)(intptr_t)(h))
 
+/* A parameter or column index from Goose's i64 as SQLite's int, or -1, which
+   SQLite takes as out of range, when it doesn't fit: a plain conversion would
+   make 4294967297 parameter 1. */
+static int idx(int64_t i) { return i < 0 || i > INT32_MAX ? -1 : (int)i; }
+
 /* A C string would end at a NUL inside s, and mean something else. */
 static int has_nul(sq_bytes s) {
     return s.len > 0 && memchr(s.data, 0, (size_t)s.len) != NULL;
@@ -103,28 +108,28 @@ int32_t sq_clear_bindings(int64_t stmt) { return sqlite3_clear_bindings(STMT(stm
 
 int64_t sq_db_of(int64_t stmt) { return (int64_t)(intptr_t)sqlite3_db_handle(STMT(stmt)); }
 
-int32_t sq_bind_int64(int64_t stmt, int32_t i, int64_t v) {
-    return sqlite3_bind_int64(STMT(stmt), i, v);
+int32_t sq_bind_int64(int64_t stmt, int64_t i, int64_t v) {
+    return sqlite3_bind_int64(STMT(stmt), idx(i), v);
 }
 
-int32_t sq_bind_double(int64_t stmt, int32_t i, double v) {
-    return sqlite3_bind_double(STMT(stmt), i, v);
+int32_t sq_bind_double(int64_t stmt, int64_t i, double v) {
+    return sqlite3_bind_double(STMT(stmt), idx(i), v);
 }
 
-int32_t sq_bind_text(int64_t stmt, int32_t i, sq_bytes v) {
+int32_t sq_bind_text(int64_t stmt, int64_t i, sq_bytes v) {
     if (v.len < 0) return SQLITE_RANGE;
     /* An empty slice may have no address; SQLite reads NULL as SQL NULL. */
     const char *p = v.len ? (const char *)v.data : "";
-    return sqlite3_bind_text64(STMT(stmt), i, p, (sqlite3_uint64)v.len, SQLITE_TRANSIENT, SQLITE_UTF8);
+    return sqlite3_bind_text64(STMT(stmt), idx(i), p, (sqlite3_uint64)v.len, SQLITE_TRANSIENT, SQLITE_UTF8);
 }
 
-int32_t sq_bind_blob(int64_t stmt, int32_t i, sq_bytes v) {
+int32_t sq_bind_blob(int64_t stmt, int64_t i, sq_bytes v) {
     if (v.len < 0) return SQLITE_RANGE;
-    if (v.len == 0) return sqlite3_bind_zeroblob(STMT(stmt), i, 0);
-    return sqlite3_bind_blob64(STMT(stmt), i, v.data, (sqlite3_uint64)v.len, SQLITE_TRANSIENT);
+    if (v.len == 0) return sqlite3_bind_zeroblob(STMT(stmt), idx(i), 0);
+    return sqlite3_bind_blob64(STMT(stmt), idx(i), v.data, (sqlite3_uint64)v.len, SQLITE_TRANSIENT);
 }
 
-int32_t sq_bind_null(int64_t stmt, int32_t i) { return sqlite3_bind_null(STMT(stmt), i); }
+int32_t sq_bind_null(int64_t stmt, int64_t i) { return sqlite3_bind_null(STMT(stmt), idx(i)); }
 
 /* The index of the parameter named name, such as ":id", or 0. */
 int32_t sq_bind_index(int64_t stmt, sq_bytes name) {
@@ -141,40 +146,43 @@ int32_t sq_step(int64_t stmt) { return sqlite3_step(STMT(stmt)); }
 
 int32_t sq_column_count(int64_t stmt) { return sqlite3_column_count(STMT(stmt)); }
 
-int32_t sq_column_type(int64_t stmt, int32_t i) { return sqlite3_column_type(STMT(stmt), i); }
+int32_t sq_column_type(int64_t stmt, int64_t i) { return sqlite3_column_type(STMT(stmt), idx(i)); }
 
-int64_t sq_column_int64(int64_t stmt, int32_t i) { return sqlite3_column_int64(STMT(stmt), i); }
+int64_t sq_column_int64(int64_t stmt, int64_t i) { return sqlite3_column_int64(STMT(stmt), idx(i)); }
 
-double sq_column_double(int64_t stmt, int32_t i) { return sqlite3_column_double(STMT(stmt), i); }
+double sq_column_double(int64_t stmt, int64_t i) { return sqlite3_column_double(STMT(stmt), idx(i)); }
 
 /* Appends column i as text, converting a number or blob as SQLite does.
    SQLITE_NOMEM when the conversion ran out of memory, else SQLITE_OK. */
-int32_t sq_column_text(int64_t stmt, int32_t i, gs_rref out) {
-    const unsigned char *p = sqlite3_column_text(STMT(stmt), i);
-    int n = sqlite3_column_bytes(STMT(stmt), i);
+int32_t sq_column_text(int64_t stmt, int64_t i, gs_rref out) {
+    const unsigned char *p = sqlite3_column_text(STMT(stmt), idx(i));
+    int n = sqlite3_column_bytes(STMT(stmt), idx(i));
     if (!p) return sqlite3_errcode(sqlite3_db_handle(STMT(stmt))) == SQLITE_NOMEM ? SQLITE_NOMEM : SQLITE_OK;
     gs_bld_append(out, p, n);
     return SQLITE_OK;
 }
 
 /* Appends column i's bytes, as sq_column_text. */
-int32_t sq_column_blob(int64_t stmt, int32_t i, gs_rref out) {
-    const void *p = sqlite3_column_blob(STMT(stmt), i);
-    int n = sqlite3_column_bytes(STMT(stmt), i);
+int32_t sq_column_blob(int64_t stmt, int64_t i, gs_rref out) {
+    const void *p = sqlite3_column_blob(STMT(stmt), idx(i));
+    int n = sqlite3_column_bytes(STMT(stmt), idx(i));
     if (!p) return sqlite3_errcode(sqlite3_db_handle(STMT(stmt))) == SQLITE_NOMEM ? SQLITE_NOMEM : SQLITE_OK;
     gs_bld_append(out, p, n);
     return SQLITE_OK;
 }
 
-void sq_column_name(int64_t stmt, int32_t i, gs_rref out) {
-    append_str(out, sqlite3_column_name(STMT(stmt), i));
+void sq_column_name(int64_t stmt, int64_t i, gs_rref out) {
+    append_str(out, sqlite3_column_name(STMT(stmt), idx(i)));
 }
 
 int64_t sq_changes(int64_t db) { return sqlite3_changes64(DB(db)); }
 
 int64_t sq_last_insert_rowid(int64_t db) { return sqlite3_last_insert_rowid(DB(db)); }
 
-int32_t sq_busy_timeout(int64_t db, int32_t ms) { return sqlite3_busy_timeout(DB(db), ms); }
+/* ms clamped to what SQLite's int takes; below 0 means 0 to SQLite too. */
+int32_t sq_busy_timeout(int64_t db, int64_t ms) {
+    return sqlite3_busy_timeout(DB(db), ms < 0 ? 0 : ms > INT32_MAX ? INT32_MAX : (int)ms);
+}
 
 /* Whether the connection is outside a transaction. */
 uint8_t sq_autocommit(int64_t db) { return sqlite3_get_autocommit(DB(db)) != 0; }

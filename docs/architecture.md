@@ -63,7 +63,9 @@ connection open, until every statement on it is finalized.
   and comments are allowed; a second statement is a `MISUSE` error.
 - `bind_i64`, `bind_f64`, `bind_text`, `bind_blob`, and `bind_null` bind parameter
   `i`, counting from 1; `sqlite::parameter(s, ":name")` gives a named parameter's
-  index. SQLite copies text and blobs, so the slice can change after the call.
+  index. SQLite copies text and blobs, so the slice can change after the call. An
+  index the statement has no parameter for, including one past SQLite's 32-bit
+  `int`, fails with `RANGE`.
 - `sqlite::step(s)` runs to the next row and returns `true` there, or `false` when the
   statement is done. `reset` makes it ready to run again, keeping its bindings, and
   `clear_bindings` sets them to NULL.
@@ -71,8 +73,11 @@ connection open, until every statement on it is finalized.
   `TEXT`, `BLOB`, or `NULL`), `is_null`, `column_i64`, `column_f64`, and `column_text`
   and `column_blob`, which append the bytes to a `u8[>..]` the caller owns. A value of
   another type is converted as SQLite converts it; NULL reads as 0 and as no bytes.
+  A column the statement doesn't have, including one past a 32-bit `int`, reads as
+  NULL.
 - `changes`, `last_insert_rowid`, `in_transaction`, `busy_timeout`, and `version` are
-  SQLite's calls of those names.
+  SQLite's calls of those names. `busy_timeout` clamps its milliseconds to 0 through
+  2,147,483,647, about 24.8 days, the range SQLite's `int` takes.
 
 ## Transactions
 

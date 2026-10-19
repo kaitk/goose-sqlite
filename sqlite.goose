@@ -78,24 +78,26 @@ extern "sq_finalize" fn finalize_c(stmt: i64) -> i32;
 extern "sq_reset" fn reset_c(stmt: i64) -> i32;
 extern "sq_clear_bindings" fn clear_bindings_c(stmt: i64) -> i32;
 extern "sq_db_of" fn db_of_c(stmt: i64) -> i64;
-extern "sq_bind_int64" fn bind_int64_c(stmt: i64, i: i32, v: i64) -> i32;
-extern "sq_bind_double" fn bind_double_c(stmt: i64, i: i32, v: f64) -> i32;
-extern "sq_bind_text" fn bind_text_c(stmt: i64, i: i32, v: const u8[:]) -> i32;
-extern "sq_bind_blob" fn bind_blob_c(stmt: i64, i: i32, v: const u8[:]) -> i32;
-extern "sq_bind_null" fn bind_null_c(stmt: i64, i: i32) -> i32;
+// Each index and ms crosses as an i64, and the shim checks its range before
+// converting it to SQLite's int.
+extern "sq_bind_int64" fn bind_int64_c(stmt: i64, i: i64, v: i64) -> i32;
+extern "sq_bind_double" fn bind_double_c(stmt: i64, i: i64, v: f64) -> i32;
+extern "sq_bind_text" fn bind_text_c(stmt: i64, i: i64, v: const u8[:]) -> i32;
+extern "sq_bind_blob" fn bind_blob_c(stmt: i64, i: i64, v: const u8[:]) -> i32;
+extern "sq_bind_null" fn bind_null_c(stmt: i64, i: i64) -> i32;
 extern "sq_bind_index" fn bind_index_c(stmt: i64, name: const u8[:]) -> i32;
 extern "sq_bind_count" fn bind_count_c(stmt: i64) -> i32;
 extern "sq_step" fn step_c(stmt: i64) -> i32;
 extern "sq_column_count" fn column_count_c(stmt: i64) -> i32;
-extern "sq_column_type" fn column_type_c(stmt: i64, i: i32) -> i32;
-extern "sq_column_int64" fn column_int64_c(stmt: i64, i: i32) -> i64;
-extern "sq_column_double" fn column_double_c(stmt: i64, i: i32) -> f64;
-extern "sq_column_text" fn column_text_c(stmt: i64, i: i32, out: u8[>..]&) -> i32;
-extern "sq_column_blob" fn column_blob_c(stmt: i64, i: i32, out: u8[>..]&) -> i32;
-extern "sq_column_name" fn column_name_c(stmt: i64, i: i32, out: u8[>..]&);
+extern "sq_column_type" fn column_type_c(stmt: i64, i: i64) -> i32;
+extern "sq_column_int64" fn column_int64_c(stmt: i64, i: i64) -> i64;
+extern "sq_column_double" fn column_double_c(stmt: i64, i: i64) -> f64;
+extern "sq_column_text" fn column_text_c(stmt: i64, i: i64, out: u8[>..]&) -> i32;
+extern "sq_column_blob" fn column_blob_c(stmt: i64, i: i64, out: u8[>..]&) -> i32;
+extern "sq_column_name" fn column_name_c(stmt: i64, i: i64, out: u8[>..]&);
 extern "sq_changes" fn changes_c(db: i64) -> i64;
 extern "sq_last_insert_rowid" fn last_insert_rowid_c(db: i64) -> i64;
-extern "sq_busy_timeout" fn busy_timeout_c(db: i64, ms: i32) -> i32;
+extern "sq_busy_timeout" fn busy_timeout_c(db: i64, ms: i64) -> i32;
 extern "sq_autocommit" fn autocommit_c(db: i64) -> bool;
 extern "sq_version" fn version_c(out: u8[>..]&);
 
@@ -195,8 +197,9 @@ fn close(db: Db) -> bool { close_c(db.id) == OK }
 fn exec(db: Db, sql) { check(db.id, exec_c(db.id, sql)); }
 
 // Wait up to ms milliseconds for a lock another connection holds before a
-// call fails with BUSY; 0 fails at once, the default.
-fn busy_timeout(db: Db, ms: i64) { busy_timeout_c(db.id, ms as i32); }
+// call fails with BUSY; 0 fails at once, the default. ms is clamped to 0
+// through 2147483647, about 24.8 days, the most SQLite takes.
+fn busy_timeout(db: Db, ms: i64) { busy_timeout_c(db.id, ms); }
 
 // The rows the last INSERT, UPDATE, or DELETE on db changed.
 fn changes(db: Db) -> i64 { changes_c(db.id) }
@@ -230,13 +233,13 @@ fn reset(s: Stmt) { reset_c(s.id); }
 // Sets every parameter of s to NULL.
 fn clear_bindings(s: Stmt) { clear_bindings_c(s.id); }
 
-// Binds parameter i of s, counting from 1, to a value. Text must be UTF-8;
-// SQLite copies text and blobs.
-fn bind_i64(s: Stmt, i, v: i64) { check_stmt(s, bind_int64_c(s.id, i as i32, v)); }
-fn bind_f64(s: Stmt, i, v: f64) { check_stmt(s, bind_double_c(s.id, i as i32, v)); }
-fn bind_text(s: Stmt, i, v: const u8[:]) { check_stmt(s, bind_text_c(s.id, i as i32, v)); }
-fn bind_blob(s: Stmt, i, v: const u8[:]) { check_stmt(s, bind_blob_c(s.id, i as i32, v)); }
-fn bind_null(s: Stmt, i) { check_stmt(s, bind_null_c(s.id, i as i32)); }
+// Binds parameter i of s, counting from 1, to a value; fails with RANGE when s
+// has no parameter i. Text must be UTF-8; SQLite copies text and blobs.
+fn bind_i64(s: Stmt, i, v: i64) { check_stmt(s, bind_int64_c(s.id, i, v)); }
+fn bind_f64(s: Stmt, i, v: f64) { check_stmt(s, bind_double_c(s.id, i, v)); }
+fn bind_text(s: Stmt, i, v: const u8[:]) { check_stmt(s, bind_text_c(s.id, i, v)); }
+fn bind_blob(s: Stmt, i, v: const u8[:]) { check_stmt(s, bind_blob_c(s.id, i, v)); }
+fn bind_null(s: Stmt, i) { check_stmt(s, bind_null_c(s.id, i)); }
 
 // The index of the parameter named name in s, such as ":id"; fails with
 // RANGE when s has none of that name.
@@ -263,16 +266,18 @@ fn column_count(s: Stmt) -> i64 { column_count_c(s.id) }
 
 // Column i of the current row, counting from 0: its type (INTEGER, FLOAT,
 // TEXT, BLOB, or NULL), or its value, converted as SQLite converts.
-// column_text and column_blob append the bytes to out.
-fn column_type(s: Stmt, i: i64) -> i32 { column_type_c(s.id, i as i32) }
+// column_text and column_blob append the bytes to out. A column s doesn't
+// have reads as NULL.
+fn column_type(s: Stmt, i: i64) -> i32 { column_type_c(s.id, i) }
 fn is_null(s: Stmt, i: i64) -> bool { column_type(s, i) == NULL }
-fn column_i64(s: Stmt, i: i64) -> i64 { column_int64_c(s.id, i as i32) }
-fn column_f64(s: Stmt, i: i64) -> f64 { column_double_c(s.id, i as i32) }
-fn column_text(s: Stmt, i, out: u8[>..]&) { check_stmt(s, column_text_c(s.id, i as i32, out)); }
-fn column_blob(s: Stmt, i, out: u8[>..]&) { check_stmt(s, column_blob_c(s.id, i as i32, out)); }
+fn column_i64(s: Stmt, i: i64) -> i64 { column_int64_c(s.id, i) }
+fn column_f64(s: Stmt, i: i64) -> f64 { column_double_c(s.id, i) }
+fn column_text(s: Stmt, i, out: u8[>..]&) { check_stmt(s, column_text_c(s.id, i, out)); }
+fn column_blob(s: Stmt, i, out: u8[>..]&) { check_stmt(s, column_blob_c(s.id, i, out)); }
 
-// Appends the name of s's column i to out.
-fn column_name(s: Stmt, i: i64, out: u8[>..]&) { column_name_c(s.id, i as i32, out); }
+// Appends the name of s's column i to out, or nothing for a column s doesn't
+// have.
+fn column_name(s: Stmt, i: i64, out: u8[>..]&) { column_name_c(s.id, i, out); }
 
 // Appends rc's message to out: the connection's when its last error is rc,
 // SQLite's text for the code otherwise.

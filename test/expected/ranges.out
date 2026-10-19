@@ -1,0 +1,14 @@
+bind 4294967297: 25 column index out of range
+bind -1: 25 column index out of range
+a row: ok
+column 0: 42
+column 4294967296: 0
+column 4294967296 is NULL: ok
+column 4294967297 is NULL: ok
+column 4294967297 as text: 
+name of column 4294967296: 
+busy_timeout 4294967297: 2147483647
+busy_timeout -4294967295: 0
+busy_timeout 5000: 5000
+closed: ok
+run: no error

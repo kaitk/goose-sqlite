@@ -121,8 +121,10 @@ table with the reason, and return to a release once one includes the fix.
    parameters and a reset; each bound type read back with the type SQLite stored
    (`i64` at both ends, reals, UTF-8 text, text holding a NUL, blobs of every byte
    value, empty text and blobs, and NULL); and the errors each call fails with, after
-   each of which the connection still works; and foreign keys enforced by default and
-   not when `open` turns them off. `test/transactions/` checks that a
+   each of which the connection still works; foreign keys enforced by default and
+   not when `open` turns them off; and parameter and column indexes and a
+   `busy_timeout` past a 32-bit `int`, which fail with `RANGE`, read as NULL, and
+   clamp rather than wrap. `test/transactions/` checks that a
    transaction commits, rolls back when a call in it fails or it calls `fail`, and
    nests as savepoints: three deep, inside an `exec`'s `BEGIN`, an inner failure
    undoing only its own rows, an outer failure undoing the inner ones, a statement
