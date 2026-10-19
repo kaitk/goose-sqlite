@@ -1,0 +1,2 @@
+# The amalgamation stays byte for byte as SQLite publishes it.
+vendor/sqlite/** -text
