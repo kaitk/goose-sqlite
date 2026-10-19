@@ -35,8 +35,6 @@ What remains:
 - Windows: no Windows machine was available, so neither the build time nor
   `scripts/test.sh` has run there, with MSVC or with `clang-cl`. The sidecar passes
   `/std:c11` to MSVC for the shim's `_Static_assert`; that is untested.
-- Whether connections enforce foreign keys by default, an open question in
-  `docs/decisions.md`.
 - goose-rest's program on a lane, in goose-rest.
 
 ## Acceptance criteria

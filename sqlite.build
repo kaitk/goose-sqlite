@@ -17,6 +17,7 @@ c_defines = [
     "SQLITE_STRICT_SUBTYPE=1",
     "SQLITE_OMIT_LOAD_EXTENSION",
     "SQLITE_MAX_WORKER_THREADS=0",
+    "SQLITE_DEFAULT_FOREIGN_KEYS=1",
 ];
 // The shim's _Static_assert is C11, which MSVC takes only when asked.
 c_flags_msvc = ["/std:c11"];

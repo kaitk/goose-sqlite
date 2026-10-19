@@ -121,7 +121,8 @@ table with the reason, and return to a release once one includes the fix.
    parameters and a reset; each bound type read back with the type SQLite stored
    (`i64` at both ends, reals, UTF-8 text, text holding a NUL, blobs of every byte
    value, empty text and blobs, and NULL); and the errors each call fails with, after
-   each of which the connection still works. `test/transactions/` checks that a
+   each of which the connection still works; and foreign keys enforced by default and
+   not when `open` turns them off. `test/transactions/` checks that a
    transaction commits, rolls back when a call in it fails or it calls `fail`, and
    fails at the `BEGIN` of one inside another. `test/threads/` runs one writer and
    two read-only WAL readers, each on its own thread with its own connection: the

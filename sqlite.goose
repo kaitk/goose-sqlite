@@ -150,8 +150,9 @@ fn version() -> u8[>..] {
 }
 
 // Opens the database file at path, a UTF-8 path or ":memory:", with flags:
-// READ_WRITE | CREATE by default. Extended result codes are on.
-fn open(path, flags: i32 = READ_WRITE | CREATE) -> Db {
+// READ_WRITE | CREATE by default. Extended result codes are on, and so is
+// foreign key enforcement, unless foreign_keys is false.
+fn open(path, flags: i32 = READ_WRITE | CREATE, foreign_keys: bool = true) -> Db {
     var id: i64 = 0;
     let rc = open_c(path, flags, id);
     if rc != OK {
@@ -159,6 +160,16 @@ fn open(path, flags: i32 = READ_WRITE | CREATE) -> Db {
         message(id, rc, msg);
         close_c(id);
         fail(rc, msg);
+    }
+    // SQLITE_DEFAULT_FOREIGN_KEYS=1 in sqlite.build turns enforcement on.
+    if !foreign_keys {
+        let off = exec_c(id, "PRAGMA foreign_keys = OFF");
+        if off != OK {
+            var msg: u8[>..] = [];
+            message(id, off, msg);
+            close_c(id);
+            fail(off, msg);
+        }
     }
     return Db { id: id };
 }

@@ -1,0 +1,9 @@
+by default, foreign_keys: 1
+an entry for project 1: no error
+an entry for project 2: 787 FOREIGN KEY constraint failed
+closed: ok
+schema: no error
+with foreign_keys false, foreign_keys: 0
+an entry for project 2: no error
+closed: ok
+off: no error

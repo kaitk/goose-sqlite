@@ -51,10 +51,12 @@ connection open, until every statement on it is finalized.
 
 ## Connections and statements
 
-- `sqlite::open(path, flags)` opens a database file, or `":memory:"`, with
-  `sqlite::READ_WRITE | sqlite::CREATE` by default, or `sqlite::READ_ONLY`. Extended
-  result codes are on. Pragmas such as `journal_mode = WAL` and `foreign_keys = ON` are
-  set with `exec`; SQLite's defaults apply otherwise.
+- `sqlite::open(path, flags, foreign_keys)` opens a database file, or `":memory:"`,
+  with `sqlite::READ_WRITE | sqlite::CREATE` by default, or `sqlite::READ_ONLY`.
+  Extended result codes are on. Foreign keys are enforced, as in rusqlite's `bundled`
+  build, unlike SQLite's own default; `foreign_keys` false turns them off for that
+  connection. Pragmas such as `journal_mode = WAL` are set with `exec`; SQLite's
+  defaults apply otherwise.
 - `sqlite::exec(db, sql)` runs every statement in `sql` and discards rows: a schema,
   or pragmas.
 - `sqlite::prepare(db, sql)` prepares one statement, a `sqlite::Stmt`. Trailing spaces
@@ -127,6 +129,7 @@ The amalgamation is SQLite 3.54.1, unchanged ([development](development.md#sqlit
 | `SQLITE_STRICT_SUBTYPE=1` | An error for a function that sets a subtype it didn't declare |
 | `SQLITE_OMIT_LOAD_EXTENSION` | No extensions loaded at run time |
 | `SQLITE_MAX_WORKER_THREADS=0` | SQLite starts no threads of its own |
+| `SQLITE_DEFAULT_FOREIGN_KEYS=1` | Foreign keys enforced unless `open` turns them off |
 
 No optional extension is built in: no FTS5, R*Tree, math functions, or session
 extension. The JSON functions are part of SQLite's core.

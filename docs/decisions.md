@@ -52,7 +52,15 @@ with its reason and the trade-off that matters. How the package works, for its u
   The additions: `SQLITE_OMIT_LOAD_EXTENSION`, since a program loads no SQLite
   extension at run time and so needs no `dlopen`; and `SQLITE_MAX_WORKER_THREADS=0`,
   since the package starts no threads, and SQLite's sorter would otherwise be allowed
-  to.
+  to. `SQLITE_DEFAULT_FOREIGN_KEYS=1` is the next decision's.
+- **Foreign keys are enforced by default, and a connection can turn them off.**
+  `sqlite.build` passes `SQLITE_DEFAULT_FOREIGN_KEYS=1`, as rusqlite's `bundled` build,
+  which snowtime-native uses, does, so a schema's `REFERENCES` hold without a pragma
+  on each connection. `sqlite::open(path, flags, false)` turns them off for that
+  connection, with `PRAGMA foreign_keys = OFF`, for a bulk load or a migration that
+  rebuilds a table. SQLite's own default is off, so SQL written for other SQLite
+  builds may fail here where it passed there (2026-10-19). This replaces the open
+  question of 2026-10-19.
 - **No optional SQLite extensions yet.** FTS5, R*Tree, the math functions, and the
   session extension stay out until a program needs one; the JSON functions are built
   in. Each adds compile time and code to every program that imports the package
@@ -86,9 +94,4 @@ None.
 
 ## Open
 
-- Whether connections enforce foreign keys by default. SQLite's default is off, and a
-  program turns it on with `PRAGMA foreign_keys = ON` on each connection; rusqlite's
-  `bundled` build, which snowtime-native uses, compiles it on
-  (`SQLITE_DEFAULT_FOREIGN_KEYS=1`). The package keeps SQLite's default until this is
-  settled.
 - How long `goose build` takes on Windows, with MSVC and with `clang-cl`.
