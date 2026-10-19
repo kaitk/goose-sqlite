@@ -34,9 +34,10 @@ and `COMMIT`, and rolls back and returns the error when a call fails or the bloc
 
 1. Agree the forms with goose-postgres's task 004, and record them in
    `docs/decisions.md`: the overloads with and without a value, `Tx`, and what happens
-   to the current block form. A transaction inside another fails at its `BEGIN` here,
-   where Postgres's would go on inside the first one; record whether both packages
-   use savepoints for it instead, or refuse it the same way.
+   to the current block form. A transaction inside another becomes a savepoint in both
+   packages (agreed 2026-10-19, as Drizzle and other ORMs do): `SAVEPOINT`, then
+   `RELEASE` on success or `ROLLBACK TO` on failure, where today the inner `BEGIN`
+   fails.
 2. The block, keeping the untyped parameter on each function that can fail
    (`docs/goose-findings.md`).
 3. Tests: a block that returns a value and commits; one that fails at depth through a
