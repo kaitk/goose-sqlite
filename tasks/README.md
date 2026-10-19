@@ -45,5 +45,6 @@ for the latest measurements.
 
 ## Order
 
-Task 001, the bindings, is the only task so far.
+Task 001, the bindings, is the only task so far. It works on macOS and Linux; Windows
+remains.
 

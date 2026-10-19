@@ -3,11 +3,15 @@
 ## Project context
 
 - What this is, its API, and its pin: `README.md`
-- The decisions, each dated with its reason and trade-off: `docs/decisions.md`. A new
-  decision goes there. `docs/architecture.md`, written with the first code, describes
-  how the package works for its users and changes with each decision that changes it
-- Toolchain, local setup, and tests: `docs/development.md`
+- How it works, for users: `docs/architecture.md`; the decisions, each dated with its
+  reason and trade-off: `docs/decisions.md`. A new decision goes in `docs/decisions.md`,
+  and `docs/architecture.md` changes with it where it describes what changed
+- Toolchain, local setup, the SQLite pin, and tests: `docs/development.md`
 - Goose compiler and stdlib gaps found here: `docs/goose-findings.md`
+- Measurements, such as build times: `docs/results.md` (each machine's latest run) and
+  `docs/results-history.md` (earlier runs)
+- What the package takes from others' work, SQLite's amalgamation first:
+  `docs/credits.md`
 - Task tracking: `tasks/` (see `tasks/README.md`)
 - Substantial doc drafts and requested prose reviews:
   `.claude/skills/google-style/SKILL.md`; other writing follows "Writing" below
@@ -20,8 +24,9 @@
 
 Follow the recorded decisions; if a change contradicts one, update the doc in the same
 change or ask first. Record setup facts and environment traps you find (paths, shell
-quirks, compilers, build times) in `docs/development.md`, not
-in agent memory, so the next agent finds them. Docs and commits name no people: date a
+quirks, compilers) in `docs/development.md`, not in agent memory, so the next agent
+finds them. Every measurement, such as a build time, goes in `docs/results.md` with how
+it was measured: machine, OS, compiler, command, and run count. Docs and commits name no people: date a
 decision or a request (`(2026-10-19)`), and describe the setup without anyone's machine,
 checkouts, or home directory. What only one machine needs, such as where its Goose
 checkout is, goes in `CLAUDE.local.md`, which git ignores. Benchmark results still name

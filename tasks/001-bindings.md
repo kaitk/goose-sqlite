@@ -1,6 +1,6 @@
 # 001: Bindings over the SQLite amalgamation
 
-Status: todo (2026-10-19)
+Status: in-progress (2026-10-19)
 
 The first API: connections, prepared statements, and transactions, over the latest
 SQLite release's amalgamation, built by `goose build` from the package's `.build`
@@ -22,10 +22,27 @@ sidecar. goose-rest's data-access examples (its task 035) are its first user.
    reading while one writes. `scripts/test.sh` runs them.
 5. `docs/architecture.md`: the API, the thread rule, and the options.
 
+## State
+
+Steps 1 to 5 are done on macOS and Linux (2026-10-19). SQLite 3.54.1 is vendored, its
+options and the reasons for them are in `docs/decisions.md`, and build times on macOS
+(clang) and Linux arm64 (gcc, in Docker) are in `docs/results.md`. `scripts/test.sh`
+passes on macOS arm64, on Linux arm64 in Docker, and on Linux x64 in Docker under
+emulation.
+
+What remains:
+
+- Windows: no Windows machine was available, so neither the build time nor
+  `scripts/test.sh` has run there, with MSVC or with `clang-cl`. The sidecar passes
+  `/std:c11` to MSVC for the shim's `_Static_assert`; that is untested.
+- Whether connections enforce foreign keys by default, an open question in
+  `docs/decisions.md`.
+- goose-rest's program on a lane, in goose-rest.
+
 ## Acceptance criteria
 
 - [ ] The amalgamation's version and options recorded in `docs/decisions.md` and
-      `docs/development.md`, with build times per platform
-- [ ] The API in `README.md` and `docs/architecture.md`
-- [ ] `scripts/test.sh` passes on macOS, Linux, and Windows
+      `docs/development.md`, with build times per platform (all but Windows)
+- [x] The API in `README.md` and `docs/architecture.md`
+- [ ] `scripts/test.sh` passes on macOS, Linux, and Windows (all but Windows)
 - [ ] A goose-rest program reads and writes through a lane (in goose-rest, its task 035)
