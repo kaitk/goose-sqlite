@@ -16,4 +16,29 @@ None yet.
 
 ## Feature requests
 
-None yet.
+### `goose check` of a library rejects a typed function that can fail
+
+Found on `3ee3871` (`v2026.2`), task 001. Status: open; not reported
+
+`goose check lib.goose` checks each fully typed function of a library module as if a
+program called it with nothing around it, so a function that reaches
+`return ... from run` fails the check: "return from run: no enclosing call of run on
+this compile-time call path". In a program, the same function compiles wherever its
+calls lie inside `run`, so the error is about a call path no program has. A generic
+function is checked only where it's called, and passes. Expected: `goose check` of a
+module with no `main` checks the rule only on the paths its own code calls, so a
+library can type its parameters and still be checked on its own.
+
+    namespace lib;
+
+    fn run<F>() -> i64 { F(); return 0; }
+    fn fail() { return 1 from run; }
+
+    fn checked(x) { if x < 0 { fail(); } }        // passes goose check
+    fn rejected(x: i64) { if x < 0 { fail(); } }  // fails goose check
+
+Without `rejected`, `goose check lib.goose` passes; a program that calls
+`lib::rejected(-1)` inside `lib::run() { ... }` compiles and runs.
+
+Workaround: each function in `sqlite.goose` that can fail keeps one untyped parameter,
+such as `step(s)` ([development](development.md#traps)).

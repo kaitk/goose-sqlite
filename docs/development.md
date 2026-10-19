@@ -197,6 +197,6 @@ emulation. There the tests took 37 s, SQLite's build included (2026-10-19).
   fully typed one is checked by `goose check sqlite.goose` as a function of its own,
   with no `run` around it, and rejected: "return from run: no enclosing call of run
   on this compile-time call path". A generic one is checked only where a program
-  calls it.
+  calls it ([findings](goose-findings.md#goose-check-of-a-library-rejects-a-typed-function-that-can-fail)).
 - `NOTHING` is an SQL keyword (`ON CONFLICT DO NOTHING`), so `SELECT * FROM nothing`
   is a syntax error, not "no such table".
