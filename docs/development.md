@@ -124,7 +124,9 @@ table with the reason, and return to a release once one includes the fix.
    each of which the connection still works; foreign keys enforced by default and
    not when `open` turns them off; and parameter and column indexes and a
    `busy_timeout` past a 32-bit `int`, which fail with `RANGE`, read as NULL, and
-   clamp rather than wrap. `test/transactions/` checks that a
+   clamp rather than wrap; and defensive mode and `trusted_schema` off, which keep
+   `writable_schema` off and `sqlite_schema` unwritable. `test/transactions/` checks
+   that a
    transaction commits, rolls back when a call in it fails or it calls `fail`, and
    nests as savepoints: three deep, inside an `exec`'s `BEGIN`, an inner failure
    undoing only its own rows, an outer failure undoing the inner ones, a statement

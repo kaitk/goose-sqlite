@@ -62,6 +62,12 @@ int32_t sq_open(sq_bytes path, int32_t flags, int64_t *db) {
     rc = sqlite3_open_v2(p, &h, flags | SQLITE_OPEN_EXRESCODE, NULL);
     free(p);
     *db = (int64_t)(intptr_t)h;
+    /* SQLite's hardening for a database file that may come from elsewhere
+       (sqlite.org/security.html): no SQL that corrupts the file on purpose,
+       such as writes to sqlite_schema, and no functions with side effects run
+       from the schema's views and triggers. */
+    if (rc == SQLITE_OK) rc = sqlite3_db_config(h, SQLITE_DBCONFIG_DEFENSIVE, 1, (int *)0);
+    if (rc == SQLITE_OK) rc = sqlite3_db_config(h, SQLITE_DBCONFIG_TRUSTED_SCHEMA, 0, (int *)0);
     return rc;
 }
 

@@ -1,0 +1,7 @@
+trusted_schema: 0
+writable_schema after ON: 0
+delete from sqlite_schema: 1 table sqlite_master may not be modified
+schema_version unchanged: ok
+tables left: 1
+closed: ok
+run: no error

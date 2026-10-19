@@ -61,6 +61,17 @@ with its reason and the trade-off that matters. How the package works, for its u
   rebuilds a table. SQLite's own default is off, so SQL written for other SQLite
   builds may fail here where it passed there (2026-10-19). This replaces the open
   question of 2026-10-19.
+- **Every connection is defensive and distrusts the schema.** The shim's open sets
+  `SQLITE_DBCONFIG_DEFENSIVE` on and `SQLITE_DBCONFIG_TRUSTED_SCHEMA` off, as
+  [SQLite's security advice](https://sqlite.org/security.html) recommends for a
+  database file that may come from elsewhere: SQL can't corrupt the file on purpose
+  (`PRAGMA writable_schema = ON` and `schema_version = N` are ignored, and
+  `sqlite_schema` can't be written), and the schema's views and triggers can't call
+  functions with side effects. Both are set with `sqlite3_db_config` at open rather
+  than `SQLITE_TRUSTED_SCHEMA=0` in `sqlite.build`: defensive mode has no compile-time
+  option, so open sets it anyway, and the two then sit together in one place. A program
+  can turn `trusted_schema` back on with its pragma; defensive mode has no pragma
+  (2026-10-19).
 - **No optional SQLite extensions yet.** FTS5, R*Tree, the math functions, and the
   session extension stay out until a program needs one; the JSON functions are built
   in. Each adds compile time and code to every program that imports the package

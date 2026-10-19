@@ -55,7 +55,10 @@ connection open, until every statement on it is finalized.
   with `sqlite::READ_WRITE | sqlite::CREATE` by default, or `sqlite::READ_ONLY`.
   Extended result codes are on. Foreign keys are enforced, as in rusqlite's `bundled`
   build, unlike SQLite's own default; `foreign_keys` false turns them off for that
-  connection. Pragmas such as `journal_mode = WAL` are set with `exec`; SQLite's
+  connection. SQLite's defensive mode is on and `trusted_schema` off, so SQL can't
+  corrupt the file on purpose, such as by writing `sqlite_schema`, and a schema from
+  an untrusted file can't call functions with side effects from its views and
+  triggers. Pragmas such as `journal_mode = WAL` are set with `exec`; SQLite's
   defaults apply otherwise.
 - `sqlite::exec(db, sql)` runs every statement in `sql` and discards rows: a schema,
   or pragmas.
