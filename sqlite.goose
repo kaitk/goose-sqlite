@@ -1,7 +1,7 @@
 // SQLite, over the amalgamation in vendor/sqlite/ and the shim in
 // shim/sqlite.c. Every call blocks until SQLite is done, and the package
 // starts no threads: a program runs it on a thread of its own, such as a
-// goose-rest lane. A connection, and the statements prepared on it, belong to
+// Plod lane. A connection, and the statements prepared on it, belong to
 // one thread at a time (docs/architecture.md).
 //
 //   let failed = sqlite::run() {

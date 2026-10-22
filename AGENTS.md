@@ -18,7 +18,7 @@ read the file a task touches before starting it.
 - Task tracking: `tasks/` (see `tasks/README.md`)
 - The library: SQLite's C interface (`sqlite.org/c3ref`), for the amalgamation's version
   in `docs/development.md`.
-- Its first user: goose-rest, whose programs run the database on lanes.
+- Its first user: Plod, whose programs run the database on lanes.
 - The language: the pinned Goose release's `docs/tutorial.md`, `docs/goose_spec.md`,
   `docs/stdlib.md`, and `docs/packages.md` (C sources in a `.build` sidecar). Read the
   tutorial before writing Goose; check the spec before assuming a feature exists.

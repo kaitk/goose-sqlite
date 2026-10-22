@@ -3,8 +3,8 @@
 SQLite for [Goose](https://github.com/aardappel/goose): a Goose API over SQLite's C
 library, built from the SQLite amalgamation that this repository carries, so a program
 needs no system SQLite ([architecture](docs/architecture.md)). Its first user is
-[goose-rest](https://github.com/kaitk/goose-rest), whose programs run the database on
-lanes, threads of their own.
+[Plod](https://github.com/kaitk/plod), whose programs run the database on lanes,
+threads of their own.
 
 Calls block until SQLite is done, and a connection belongs to one thread. A call that
 fails leaves through `return ... from sqlite::run` with SQLite's error, and the compiler

@@ -174,8 +174,7 @@ What `transaction` doesn't guard against:
 ## Threads
 
 SQLite's calls block until SQLite is done, and the package starts no threads. A program
-runs it on a thread of its own: in goose-rest, a lane, never a worker that serves
-requests.
+runs it on a thread of its own: in Plod, a lane, never a worker that serves requests.
 
 Give each thread a connection of its own, and keep the statements prepared on it on
 that thread. Every connection is opened serialized (`SQLITE_OPEN_FULLMUTEX`): it takes
