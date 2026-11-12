@@ -23,7 +23,7 @@ checks that every such call runs inside `run` or a transaction.
 | 🟢 | Transactions | `sqlite::transaction`, which commits, or rolls back and returns the error. |
 | 🟢 | Savepoints | A transaction inside another is a savepoint: its failure undoes only its own changes. |
 | 🟢 | Threads | One writer and read-only WAL readers, each a thread with its own connection. |
-| 🟡 | Platforms | Tested on macOS (arm64) and Linux (arm64, and x64 under emulation); not yet on Windows. |
+| 🟡 | Platforms | Tested on macOS (arm64) and Linux (arm64 and x64); not yet on Windows. |
 | 🔴 | Migrations | Numbered SQL files applied in order, once each. |
 | 🔴 | Extensions | FTS5, R*Tree, and the math functions aren't built in. |
 
@@ -31,7 +31,7 @@ checks that every such call runs inside `run` or a transaction.
 
 ```goose
 import std;
-import sqlite from "github.com/kaitk/goose-sqlite@v0.0.3";
+import sqlite from "github.com/kaitk/goose-sqlite@v0.0.4";
 
 fn main() {
     let failed = sqlite::run() {
@@ -63,7 +63,7 @@ goose build notes.goose
 ```
 
 The first build compiles SQLite, which takes 10 s or more; later builds reuse it. The
-tag `v0.0.3` has everything marked 🟢 above. The package needs a C compiler, which
+tag `v0.0.4` has everything marked 🟢 above. The package needs a C compiler, which
 `goose build` finds, and no other package.
 
 ## Rules for safe use
