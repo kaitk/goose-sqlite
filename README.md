@@ -18,6 +18,7 @@ checks that every such call runs inside `run` or a transaction.
 |---|---|---|
 | 🟢 | Connections | Open a file read-write or read-only, or in memory; pragmas such as `journal_mode = WAL` through `exec`. |
 | 🟢 | Statements | Prepare, bind integers, reals, text, blobs, and NULL by number or name, step, read columns by type, reset, and finalize. |
+| 🟢 | Queries | A `Conn` that prepares each statement once; `query` and `exec` take the SQL and its parameters. |
 | 🟢 | Errors | SQLite's extended result code and message, through `sqlite::run`. |
 | 🟢 | Transactions | `sqlite::transaction`, which commits, or rolls back and returns the error. |
 | 🟢 | Savepoints | A transaction inside another is a savepoint: its failure undoes only its own changes. |
@@ -67,9 +68,10 @@ tag `v0.0.3` has everything marked 🟢 above. The package needs a C compiler, w
 
 ## Rules for safe use
 
-- **Bind values; don't build SQL from them.** `exec` takes no parameters, so text a
-  user or another system supplied never goes into its SQL. Prepare a statement with
-  `?` or `:name` and bind the value, which SQLite never reads as SQL.
+- **Bind values; don't build SQL from them.** `exec(db, sql)` takes no parameters, so
+  text a user or another system supplied never goes into its SQL. Pass the value to
+  `query` or `exec` on a `Conn`, or prepare a statement with `?` or `:name` and bind
+  it; SQLite never reads a bound value as SQL.
 - **Never `return` out of a `transaction` block.** A `return` in the block returns from
   the enclosing function past both `COMMIT` and `ROLLBACK`, and leaves the connection
   in the transaction, where every later `transaction` is a savepoint that never
@@ -117,7 +119,8 @@ All in namespace `sqlite`. Text and blobs go in as `u8[:]` and come out appended
   or `READ_ONLY`, gives a `Db`. Foreign keys are enforced, as in rusqlite's `bundled`
   build, unless `foreign_keys` is false; SQLite's defensive mode is on and
   `trusted_schema` off. `exec(db, sql)` runs statements and discards rows. `close(db)`
-  returns `false` while a statement on it isn't finalized. Also `busy_timeout`,
+  returns `false` while a statement on it isn't finalized. `busy_timeout(db, ms)` waits
+  up to `ms` for another connection's lock, yielding the CPU before it sleeps. Also
   `changes`, `last_insert_rowid`, `in_transaction`, and `version`.
 - **Statements**: `prepare(db, sql)` gives a `Stmt`. `bind_i64`, `bind_f64`,
   `bind_text`, `bind_blob`, and `bind_null` bind parameter `i`, from 1;
@@ -127,9 +130,18 @@ All in namespace `sqlite`. Text and blobs go in as `u8[:]` and come out appended
   `MISUSE`.
 - **Columns**, from 0: `column_count`, `column_name`, `column_type`, `is_null`,
   `column_i64`, `column_f64`, `column_text(s, i, out)`, and `column_blob(s, i, out)`.
-- **Threads**: each thread opens its own connection, and keeps its statements. Every
+- **Queries**: a `Conn`, `Conn { db: open(path), .. }`, prepares each statement on
+  first use and keeps it for the next call with the same SQL.
+  `query(c, sql, p1, ...) { r => ... }` binds up to six parameters in order, calls the
+  block with each row, and returns the rows' count; `exec(c, sql, p1, ...)` returns
+  the rows changed. A parameter is an `i64`, an `f64`, a `bool`, text, or `NO_VALUE`
+  for NULL. A row reads with `int(r, i)`, `real(r, i)`, `text(r, i)` or
+  `text(r, i, out)`, `blob(r, i, out)`, and `is_null(r, i)`. `close(c)` finalizes the
+  statements it kept and closes the connection.
+- **Threads**: each thread opens its own connection, and keeps its statements. A
   connection is opened with its mutex on, so one used by two threads at once stays
-  sound. The package starts no threads.
+  sound; `NO_MUTEX` in the flags turns it off for a connection that one thread uses
+  alone, which saves a lock on every call. The package starts no threads.
 
 ## Build times
 

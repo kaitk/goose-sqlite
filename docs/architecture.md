@@ -111,9 +111,47 @@ for e in failed { print(e.code, ": ", e.message); }
   `clear_bindings` do nothing, and the reads give 0, NULL, or no bytes. A stale handle
   never reaches freed memory, and the same holds for a `Db {}` or `Stmt {}` never
   opened.
-- `changes`, `last_insert_rowid`, `in_transaction`, `busy_timeout`, and `version` are
-  SQLite's calls of those names. `busy_timeout` clamps its milliseconds to 0 through
-  2,147,483,647, about 24.8 days, the range SQLite's `int` takes.
+- `changes`, `last_insert_rowid`, `in_transaction`, and `version` are SQLite's calls
+  of those names.
+- `busy_timeout(db, ms)` makes a connection that finds another holding a lock wait up
+  to `ms` milliseconds, clamped to 2,147,483,647, about 24.8 days, before it fails with
+  `BUSY`; 0 or less fails at once, the default. Unlike SQLite's own handler, which
+  sleeps 1, 2, 5, and 10 ms between tries, it yields the CPU for its first tries, and
+  then sleeps a millisecond a try: a commit holds the lock for tens of microseconds,
+  and a thread serving requests answers nothing while it sleeps. `PRAGMA busy_timeout`
+  reads 0, as it reports SQLite's own handler only.
+
+## Queries on a connection
+
+A `sqlite::Conn` wraps a `Db` with the statements it has prepared, so a program writes
+a query as its SQL and its values, as goose-postgres's facade does:
+
+```goose
+var c = sqlite::Conn { db: sqlite::Db {}, .. };
+let failed = sqlite::run() {
+    c.db = sqlite::open(path);
+    sqlite::query(c, "SELECT id, text FROM note WHERE id > ?", 10) { r =>
+        print(sqlite::int(r, 0), " ", sqlite::text(r, 1));
+    };
+    let n = sqlite::exec(c, "UPDATE note SET text = ? WHERE id = ?", "hi", 7);
+};
+sqlite::close(c);
+```
+
+- `query` finds the statement whose SQL is the same bytes, or prepares one and keeps
+  it, up to 32 statements and 8 KiB of their SQL; past either, it prepares the SQL
+  each time and finalizes it after. It binds the parameters in order, from 1: an
+  `i64`, an `f64`, a `bool` as 1 or 0, text as a `u8[:]`, or `sqlite::NO_VALUE` for
+  NULL. It steps the statement to its end, calling the block with each row, and then
+  resets it and clears its bindings, so a kept statement holds no read snapshot
+  between queries.
+- The block reads the row's columns with `int`, `real`, `text`, `blob`, and
+  `is_null`, as the `column_` calls do. A row is valid only inside the block.
+- A block that leaves the query early, by `return` or by failing the route around it,
+  leaves the statement where it stopped, holding its read until the statement's next
+  use resets it. A query that may stop early reads its rows into variables instead.
+- `exec` runs `query` with an empty block and returns `changes`.
+- `close(c)` finalizes every statement `c` kept and closes `c.db`.
 
 ## Transactions
 
@@ -173,14 +211,18 @@ What `transaction` doesn't guard against:
 
 ## Threads
 
-SQLite's calls block until SQLite is done, and the package starts no threads. A program
-runs it on a thread of its own: in Plod, a lane, never a worker that serves requests.
+SQLite's calls block until SQLite is done, and the package starts no threads. A query
+the page cache answers is CPU work, which Plod runs in the route, on the worker; work
+long enough to hold up the worker's other connections goes on a lane.
 
 Give each thread a connection of its own, and keep the statements prepared on it on
-that thread. Every connection is opened serialized (`SQLITE_OPEN_FULLMUTEX`): it takes
-its mutex on each call, so two threads that do use one connection at once wait for
-each other, and SQLite's memory stays sound, but they take turns and gain nothing.
-The mutex costs about 10 ns a call, uncontended ([results](results.md#connection-mutex)).
+that thread. A connection is opened serialized (`SQLITE_OPEN_FULLMUTEX`) unless the
+flags include `sqlite::NO_MUTEX`: it takes its mutex on each call, so two threads that
+do use one connection at once wait for each other, and SQLite's memory stays sound,
+but they take turns and gain nothing. The mutex costs about 10 ns a call, uncontended
+([results](results.md#connection-mutex)), and a query makes a call per column it
+reads. A connection that one thread uses alone, as a Plod worker's, is opened with
+`NO_MUTEX`; two threads using such a connection at once corrupt it.
 A `Db` or `Stmt` is a flat handle that can cross `thread_spawn` or a queue, to hand a
 connection over. Closing a connection or finalizing a statement while another thread
 is inside a call on it is still a race the package doesn't guard.
@@ -199,7 +241,7 @@ The amalgamation is SQLite 3.54.1, unchanged ([development](development.md#sqlit
 
 | Option | Effect |
 |---|---|
-| `SQLITE_THREADSAFE=2` | Connections on several threads; the shim opens each with its mutex on (`SQLITE_OPEN_FULLMUTEX`) |
+| `SQLITE_THREADSAFE=2` | Connections on several threads; the shim opens each with its mutex on (`SQLITE_OPEN_FULLMUTEX`), unless the flags include `NO_MUTEX` |
 | `SQLITE_DQS=0` | A double-quoted string is an identifier only, never a string literal |
 | `SQLITE_DEFAULT_MEMSTATUS=0` | No memory statistics, for faster allocation |
 | `SQLITE_DEFAULT_WAL_SYNCHRONOUS=1` | `synchronous = NORMAL` in WAL mode: a power loss can lose the last commits, never the database |

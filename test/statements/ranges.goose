@@ -1,7 +1,6 @@
-// Indexes and a timeout past what SQLite's int holds aren't cut down to fit:
-// a bind fails with RANGE rather than bind another parameter, a column reads
-// as NULL rather than as another column, and busy_timeout takes the most
-// SQLite does.
+// Indexes past what SQLite's int holds aren't cut down to fit: a bind fails
+// with RANGE rather than bind another parameter, and a column reads as NULL
+// rather than as another column. busy.goose checks busy_timeout's range.
 import std;
 import sqlite from "../../";
 import check from "../";
@@ -27,20 +26,6 @@ fn main() {
         sqlite::column_name(s, 4294967296, name);
         check::text("name of column 4294967296", name, "");
         sqlite::finalize(s);
-
-        fn timeout() -> i64 {
-            let q = sqlite::prepare(db, "PRAGMA busy_timeout");
-            sqlite::step(q);
-            let ms = sqlite::column_i64(q, 0);
-            sqlite::finalize(q);
-            return ms;
-        }
-        sqlite::busy_timeout(db, 4294967297);
-        check::eq("busy_timeout 4294967297", timeout(), 2147483647);
-        sqlite::busy_timeout(db, -4294967295);
-        check::eq("busy_timeout -4294967295", timeout(), 0);
-        sqlite::busy_timeout(db, 5000);
-        check::eq("busy_timeout 5000", timeout(), 5000);
         check::that("closed", sqlite::close(db));
     };
     check::errors("run", failed);

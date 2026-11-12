@@ -10,6 +10,12 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sched.h>
+#include <time.h>
+#endif
 
 #include "goose.h"
 #include "sqlite3.h"
@@ -24,10 +30,13 @@ _Static_assert(sizeof(sq_bytes) == sizeof(void *) + 8, "a Goose slice is { data,
    bump its generation, so every copy of the handle goes stale at once: a call
    through one finds the generation moved on and fails with SQLITE_MISUSE, or
    reads as nothing, instead of reaching freed memory. Goose copies a Db or
-   Stmt freely, and a handle can cross threads, so there is one table, under
-   SQLite's static application mutex. That guards the table, not a call in
-   progress: closing a connection while another thread is inside a call on it
-   is still a race. */
+   Stmt freely, and a handle can cross threads, so there is one table.
+   Opening and freeing change it under SQLite's static application mutex.
+   Looking a handle up takes no lock, as every column read does: the slots
+   sit in chunks that never move once allocated, and a handle reaches another
+   thread only through a queue, after the put that made it. The mutex guards
+   the table, not a call in progress: closing a connection while another
+   thread is inside a call on it is a race, with the lock or without. */
 enum { FREE, KIND_DB, KIND_STMT };
 
 typedef struct {
@@ -38,8 +47,13 @@ typedef struct {
     uint8_t kind;
 } sq_slot;
 
-static sq_slot *slots;
-static uint32_t nslots, cap, free_head;
+enum { CHUNK_BITS = 10, CHUNK = 1 << CHUNK_BITS, MAX_CHUNKS = 1 << 14 };
+
+static sq_slot *chunks[MAX_CHUNKS];
+static uint32_t nslots, free_head;
+
+/* Slot i, counting from 1, of the nslots allocated. */
+static sq_slot *slot_at(uint32_t i) { return &chunks[(i - 1) >> CHUNK_BITS][(i - 1) & (CHUNK - 1)]; }
 
 static sqlite3_mutex *table_mutex(void) {
     /* Opening a connection has initialized SQLite before any handle exists;
@@ -48,12 +62,11 @@ static sqlite3_mutex *table_mutex(void) {
     return sqlite3_mutex_alloc(SQLITE_MUTEX_STATIC_APP1);
 }
 
-/* The slot h names, if it holds an object of kind; the caller holds the
-   mutex. */
+/* The slot h names, if it holds an object of kind. */
 static sq_slot *slot_of(int64_t h, int kind) {
     uint32_t i = (uint32_t)(h & 0xffffffff), gen = (uint32_t)(h >> 32);
     if (i == 0 || i > nslots) return NULL;
-    sq_slot *s = &slots[i - 1];
+    sq_slot *s = slot_at(i);
     return s->kind == kind && s->gen == gen ? s : NULL;
 }
 
@@ -63,24 +76,18 @@ static int64_t put(int kind, void *p, int64_t db) {
     sqlite3_mutex_enter(m);
     uint32_t i = free_head;
     if (i) {
-        free_head = slots[i - 1].next;
+        free_head = slot_at(i)->next;
     } else {
-        if (nslots == cap && cap < INT32_MAX / 2) {
-            uint32_t more = cap ? cap * 2 : 16;
-            sq_slot *grown = realloc(slots, (size_t)more * sizeof *slots);
-            if (grown) {
-                slots = grown;
-                cap = more;
-            }
-        }
-        if (nslots < cap) {
+        uint32_t c = nslots >> CHUNK_BITS;
+        if ((nslots & (CHUNK - 1)) == 0 && c < MAX_CHUNKS && !chunks[c]) chunks[c] = calloc(CHUNK, sizeof(sq_slot));
+        if (c < MAX_CHUNKS && chunks[c]) {
+            slot_at(nslots + 1)->gen = 1;
             i = ++nslots;
-            slots[i - 1].gen = 1;
         }
     }
     int64_t h = 0;
     if (i) {
-        sq_slot *s = &slots[i - 1];
+        sq_slot *s = slot_at(i);
         s->p = p;
         s->db = db;
         s->kind = (uint8_t)kind;
@@ -92,13 +99,9 @@ static int64_t put(int kind, void *p, int64_t db) {
 
 /* The object h names, or NULL when h is stale or of another kind. */
 static void *get(int64_t h, int kind, int64_t *db) {
-    sqlite3_mutex *m = table_mutex();
-    sqlite3_mutex_enter(m);
     sq_slot *s = slot_of(h, kind);
-    void *p = s ? s->p : NULL;
     if (db) *db = s ? s->db : 0;
-    sqlite3_mutex_leave(m);
-    return p;
+    return s ? s->p : NULL;
 }
 
 /* Frees h's slot and returns its object, or NULL when h is stale. */
@@ -113,7 +116,7 @@ static void *take(int64_t h, int kind) {
         s->kind = FREE;
         s->gen = s->gen == INT32_MAX ? 1 : s->gen + 1;
         s->next = free_head;
-        free_head = (uint32_t)(s - slots) + 1;
+        free_head = (uint32_t)(h & 0xffffffff);
     }
     sqlite3_mutex_leave(m);
     return p;
@@ -161,8 +164,11 @@ int32_t sq_open(sq_bytes path, int32_t flags, int64_t *db) {
     sqlite3 *h = NULL;
     /* FULLMUTEX makes this connection serialized under SQLITE_THREADSAFE=2: it
        takes its mutex on each call, so two threads that use it at once wait
-       for each other rather than corrupt it. */
-    rc = sqlite3_open_v2(p, &h, flags | SQLITE_OPEN_EXRESCODE | SQLITE_OPEN_FULLMUTEX, NULL);
+       for each other rather than corrupt it. A program that keeps the
+       connection on one thread passes NOMUTEX, and saves a lock and an unlock
+       on every call, each column read included. */
+    if (!(flags & SQLITE_OPEN_NOMUTEX)) flags |= SQLITE_OPEN_FULLMUTEX;
+    rc = sqlite3_open_v2(p, &h, flags | SQLITE_OPEN_EXRESCODE, NULL);
     free(p);
     if (!h) return rc;
     *db = put(KIND_DB, h, 0);
@@ -373,11 +379,39 @@ int64_t sq_last_insert_rowid(int64_t db) {
     return h ? sqlite3_last_insert_rowid(h) : 0;
 }
 
-/* ms clamped to what SQLite's int takes; below 0 means 0 to SQLite too. */
+/* SQLite's own busy handler sleeps 1, 2, 5, 10 ms and more between tries. A
+   writer holds the lock for a commit, tens of microseconds, so the first
+   tries only yield the CPU, which on a busy core is often what the holder is
+   waiting for; then the handler sleeps a millisecond a try, up to the
+   timeout. */
+enum { BUSY_YIELDS = 64 };
+
+static int busy_wait(void *arg, int count) {
+    int64_t ms = (int64_t)(intptr_t)arg;
+    if (count < BUSY_YIELDS) {
+#ifdef _WIN32
+        SwitchToThread();
+#else
+        sched_yield();
+#endif
+        return 1;
+    }
+    if (count - BUSY_YIELDS >= ms) return 0;
+#ifdef _WIN32
+    Sleep(1);
+#else
+    struct timespec t = { 0, 1000000 };
+    nanosleep(&t, NULL);
+#endif
+    return 1;
+}
+
+/* ms clamped to what SQLite's int takes; 0 or below fails at once. */
 int32_t sq_busy_timeout(int64_t db, int64_t ms) {
     sqlite3 *h = db_of(db);
     if (!h) return SQLITE_MISUSE;
-    return sqlite3_busy_timeout(h, ms < 0 ? 0 : ms > INT32_MAX ? INT32_MAX : (int)ms);
+    if (ms <= 0) return sqlite3_busy_handler(h, NULL, NULL);
+    return sqlite3_busy_handler(h, busy_wait, (void *)(intptr_t)(ms > INT32_MAX ? INT32_MAX : ms));
 }
 
 /* Whether the connection is outside a transaction, as a closed one is. */

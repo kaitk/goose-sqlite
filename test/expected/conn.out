@@ -1,0 +1,20 @@
+insert 1: 1
+insert 2: 1
+insert 3: 1
+statements kept: 1
+rows: 3
+values: 1 one 0.5 1 true; 2 two -1.25 0 false; 3 kolm, 三 0.0 1 false; 
+early 2: two
+early 3: kolm, 三
+early none: none
+statements kept: 3
+update: 2
+updated: one many many 
+run: no error
+duplicate: 19
+insert 4: 1
+after: no error
+many handles: 2500
+many: no error
+stale: 21
+close: ok

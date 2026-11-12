@@ -12,10 +12,19 @@ with its reason and the trade-off that matters. How the package works, for its u
   goose-http, and goose-rest needs a database for its examples and best practices
   (goose-rest's task 035). snowtime-native, which a Goose port would replace, already
   runs on SQLite (2026-10-19).
-- **Synchronous, one connection per thread.** SQLite's calls block, so a goose-rest
-  program runs them on a lane, never on a worker. snowtime-native's layout fits that: one
-  writer thread, and read-only WAL connections each owned by one reader thread
-  (`crates/server/src/connections.rs`) (2026-10-19).
+- **A `Conn` that keeps statements by their SQL.** A query is its SQL and its values,
+  `query(c, sql, a, b) { r => ... }`, as goose-postgres's facade and snowtime-native's
+  `prepare_cached` write it, with no handle for the program to keep or finalize. The
+  lookup compares the SQL's bytes with each kept statement's, a few hundred bytes at
+  most, against a query's microseconds. Composable SQL, such as snowtime-native's
+  fragments, waits for a program that builds its SQL (2026-11-12).
+- **Synchronous, one connection per thread.** SQLite's calls block. Plod runs a query
+  on embedded SQLite in the route, on the worker, as CPU work, since the page cache
+  answers it without a wait; a lane helps only work long enough to hold up the
+  worker's other connections (Plod's architecture, "Waiting on a lane"; this replaces
+  "on a lane, never on a worker", 2026-11-12). Each thread owns its connection, as in
+  snowtime-native: one writer thread, and read-only WAL connections each owned by one
+  reader thread (`crates/server/src/connections.rs`) (2026-10-19).
 - **The amalgamation in the repository, built from the `.build` sidecar.** Every
   platform then builds the same SQLite version with the same compile-time options, with
   no system library: macOS's is old, Windows has none, and Linux needs a `-dev` package.
@@ -66,7 +75,20 @@ with its reason and the trade-off that matters. How the package works, for its u
   about 7 ns for a call without it ([results](results.md#connection-mutex)), and nothing
   next to a query that reads a page. This replaces the multi-thread mode of
   `SQLITE_THREADSAFE=2`'s entry of 2026-10-19, where a connection had no mutex and two
-  threads using it at once corrupted it (2026-10-19).
+  threads using it at once corrupted it (2026-10-19). A program that keeps a
+  connection on one thread opens it with `NO_MUTEX` and skips the lock: a query that
+  reads 20 rows of 5 columns makes about 300 calls, and the mutex was 6 percent of a
+  feed server's instructions under callgrind (Plod's task 063). The default stays
+  serialized, so sharing a connection by mistake stays sound (2026-11-12).
+- **`busy_timeout` yields before it sleeps.** SQLite's own handler sleeps 1, 2, 5, and
+  10 ms between tries, and a thread that serves requests answers nothing while it
+  sleeps. A writer holds the lock for one commit, tens of microseconds, and on a busy
+  core it is often waiting for the CPU, so the shim's handler yields for its first 64
+  tries, then sleeps a millisecond a try up to the timeout. Writers in two processes
+  on one CPU held 16,700 requests a second with it, against 9,600 with SQLite's
+  handler, whose sleeps stalled each process's event loop (Plod's task 063). The cost:
+  `PRAGMA busy_timeout` reads 0, since it reports SQLite's own handler's timeout only
+  (2026-11-12).
 - **Foreign keys are enforced by default, and a connection can turn them off.**
   `sqlite.build` passes `SQLITE_DEFAULT_FOREIGN_KEYS=1`, as rusqlite's `bundled` build,
   which snowtime-native uses, does, so a schema's `REFERENCES` hold without a pragma
@@ -106,12 +128,15 @@ with its reason and the trade-off that matters. How the package works, for its u
   so a copy of a `Stmt` finalized through another, or of a `Db` closed through
   another, used to reach freed memory; now it is stale, and a call that can fail
   fails with `MISUSE`, while the rest read as nothing or do nothing. One table serves
-  every thread, under SQLite's static application mutex (`SQLITE_MUTEX_STATIC_APP1`),
-  rather than a table per thread, since a handle crosses threads when a program hands
-  a connection over. The cost is that mutex on each call, uncontended in the
-  one-connection-per-thread layout but shared by all threads: about 8 ns a call on an
-  M1 Pro under macOS ([results](results.md#handle-lookups)). The table guards
-  lookups, not a call in progress: closing a connection on one thread while another
+  every thread, rather than a table per thread, since a handle crosses threads when a
+  program hands a connection over. Opening, closing, preparing, and finalizing change
+  the table under SQLite's static application mutex (`SQLITE_MUTEX_STATIC_APP1`). A
+  lookup takes no lock: the slots sit in chunks of 1,024 that never move once
+  allocated, up to 16,384 chunks, and a handle reaches another thread only through a
+  queue, after the call that made it. The mutex on each lookup, about 8 ns
+  ([results](results.md#handle-lookups)), was 6 percent of a feed server's
+  instructions, one per column read (Plod's task 063, 2026-11-12). The table guards
+  the slots, not a call in progress: closing a connection on one thread while another
   is inside a call on it is still a race (2026-10-19). This replaces "Handles are
   flat" of 2026-10-19, where a handle was the object's address.
 - **The program finalizes its statements.** Goose has no destructors, so a statement

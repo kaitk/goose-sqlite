@@ -1,0 +1,10 @@
+timeout 0: 5
+timeout 0 fails at once: ok
+timeout -1: 5
+timeout -1 fails at once: ok
+timeout 50: 5
+timeout 50 waits 50 ms: ok
+lock free: 0
+closed a: ok
+closed b: ok
+run: no error

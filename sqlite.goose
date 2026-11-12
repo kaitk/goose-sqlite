@@ -42,10 +42,13 @@ struct Stmt { id: i64 = 0 }
 struct Error { code: i32, message: u8[] }
 
 // open's flags, SQLite's SQLITE_OPEN_* values. Pass READ_ONLY, READ_WRITE,
-// or READ_WRITE | CREATE.
+// or READ_WRITE | CREATE, and NO_MUTEX for a connection that one thread uses
+// alone, which then takes no lock on each call. Without NO_MUTEX, two threads
+// that use one connection at once wait for each other.
 let READ_ONLY: i32 = 1;
 let READ_WRITE: i32 = 2;
 let CREATE: i32 = 4;
+let NO_MUTEX: i32 = 32768;
 
 // column_type's answers, SQLite's fundamental datatypes.
 let INTEGER: i32 = 1;
@@ -320,4 +323,179 @@ fn rollback(db: Db, savepoint: bool) {
     } else {
         exec_c(db.id, "ROLLBACK");
     }
+}
+
+// A connection that prepares each statement once, on first use, and keeps it
+// for the next call with the same SQL: query and exec take the SQL and its
+// parameters, as goose-postgres's facade does. Build it on an open Db,
+// `sqlite::Conn { db: sqlite::open(path), .. }`, and end it with close.
+//
+//   sqlite::query(c, "SELECT id, name FROM t WHERE n > ?", 10) { r =>
+//       print(sqlite::int(r, 0), " ", sqlite::text(r, 1));
+//   };
+//   let n = sqlite::exec(c, "UPDATE t SET n = n + 1 WHERE id = ?", 7);
+//
+// Past STATEMENTS statements or STATEMENT_TEXT bytes of their SQL, a query
+// prepares its SQL each time and finalizes it after.
+let STATEMENTS = 32;
+let STATEMENT_TEXT = 8192;
+
+struct Conn {
+    db: Db,
+    statements: i64 = 0,
+    stmts: i64[STATEMENTS],
+    // Statement k's SQL is sql[ends[k - 1]..ends[k]].
+    ends: i32[STATEMENTS],
+    sql: u8[..STATEMENT_TEXT],
+}
+
+// A row, as a query's block gets it. Valid only inside the block.
+struct Row { s: Stmt }
+
+// A NULL parameter: sqlite::query(c, sql, sqlite::NO_VALUE).
+struct Null {}
+let NO_VALUE = Null {};
+
+// Column i of the row, counting from 0, converted as SQLite converts: int and
+// real read NULL as 0, and text a NULL as "". text appends to out, or returns
+// the bytes.
+fn is_null(r: Row, i: i64) -> bool { column_type_c(r.s.id, i) == NULL }
+fn int(r: Row, i: i64) -> i64 { column_int64_c(r.s.id, i) }
+fn real(r: Row, i: i64) -> f64 { column_double_c(r.s.id, i) }
+fn text(r: Row, i, out: u8[>..]&) { column_text(r.s, i, out); }
+fn text(r: Row, i) -> u8[>..] {
+    var v: u8[>..] = [];
+    column_text(r.s, i, v);
+    return v;
+}
+fn blob(r: Row, i, out: u8[>..]&) { column_blob(r.s, i, out); }
+
+// Runs sql with the parameters given, in order for ?1, ?2, and so on, and
+// calls F with each row. Returns the rows' count. A parameter is an integer, a
+// real, a bool (1 or 0), bytes (bound as text), or NO_VALUE.
+fn query<F>(c: Conn&, sql) -> i64 {
+    let s, kept = statement(c, sql);
+    return rows(c, s, kept, F);
+}
+fn query<F>(c: Conn&, sql, p1) -> i64 {
+    let s, kept = statement(c, sql);
+    bind(s, 1, p1);
+    return rows(c, s, kept, F);
+}
+fn query<F>(c: Conn&, sql, p1, p2) -> i64 {
+    let s, kept = statement(c, sql);
+    bind(s, 1, p1);
+    bind(s, 2, p2);
+    return rows(c, s, kept, F);
+}
+fn query<F>(c: Conn&, sql, p1, p2, p3) -> i64 {
+    let s, kept = statement(c, sql);
+    bind(s, 1, p1);
+    bind(s, 2, p2);
+    bind(s, 3, p3);
+    return rows(c, s, kept, F);
+}
+fn query<F>(c: Conn&, sql, p1, p2, p3, p4) -> i64 {
+    let s, kept = statement(c, sql);
+    bind(s, 1, p1);
+    bind(s, 2, p2);
+    bind(s, 3, p3);
+    bind(s, 4, p4);
+    return rows(c, s, kept, F);
+}
+fn query<F>(c: Conn&, sql, p1, p2, p3, p4, p5) -> i64 {
+    let s, kept = statement(c, sql);
+    bind(s, 1, p1);
+    bind(s, 2, p2);
+    bind(s, 3, p3);
+    bind(s, 4, p4);
+    bind(s, 5, p5);
+    return rows(c, s, kept, F);
+}
+fn query<F>(c: Conn&, sql, p1, p2, p3, p4, p5, p6) -> i64 {
+    let s, kept = statement(c, sql);
+    bind(s, 1, p1);
+    bind(s, 2, p2);
+    bind(s, 3, p3);
+    bind(s, 4, p4);
+    bind(s, 5, p5);
+    bind(s, 6, p6);
+    return rows(c, s, kept, F);
+}
+
+// Runs sql, as query does, and returns the rows it changed.
+fn exec(c: Conn&, sql) -> i64 { query(c, sql) { r => }; return changes(c.db); }
+fn exec(c: Conn&, sql, p1) -> i64 { query(c, sql, p1) { r => }; return changes(c.db); }
+fn exec(c: Conn&, sql, p1, p2) -> i64 { query(c, sql, p1, p2) { r => }; return changes(c.db); }
+fn exec(c: Conn&, sql, p1, p2, p3) -> i64 {
+    query(c, sql, p1, p2, p3) { r => };
+    return changes(c.db);
+}
+fn exec(c: Conn&, sql, p1, p2, p3, p4) -> i64 {
+    query(c, sql, p1, p2, p3, p4) { r => };
+    return changes(c.db);
+}
+fn exec(c: Conn&, sql, p1, p2, p3, p4, p5) -> i64 {
+    query(c, sql, p1, p2, p3, p4, p5) { r => };
+    return changes(c.db);
+}
+fn exec(c: Conn&, sql, p1, p2, p3, p4, p5, p6) -> i64 {
+    query(c, sql, p1, p2, p3, p4, p5, p6) { r => };
+    return changes(c.db);
+}
+
+// Finalizes c's statements and closes its Db, as close(db) does.
+fn close(c: Conn&) -> bool {
+    for k in c.statements { finalize_c(c.stmts[k]); }
+    c.statements = 0;
+    c.sql.clear();
+    return close(c.db);
+}
+
+fn bind(s: Stmt, i, v: i64) { bind_i64(s, i, v); }
+fn bind(s: Stmt, i, v: f64) { bind_f64(s, i, v); }
+fn bind(s: Stmt, i, v: bool) { bind_i64(s, i, if v { 1 } else { 0 }); }
+fn bind(s: Stmt, i, v: const u8[:]) { bind_text(s, i, v); }
+fn bind(s: Stmt, i, v: Null) { bind_null(s, i); }
+
+// c's statement for sql, prepared now if c has none, and whether c keeps it.
+fn statement(c: Conn&, sql) -> Stmt, bool {
+    var start = 0;
+    for k in c.statements {
+        let end = c.ends[k] as i64;
+        if end - start == sql.len && c.sql[start..end] == sql {
+            // A block that left an earlier query early, by return or a
+            // route's fail, left the statement where it stopped.
+            reset_c(c.stmts[k]);
+            return Stmt { id: c.stmts[k] }, true;
+        }
+        start = end;
+    }
+    let s = prepare(c.db, sql);
+    guard c.statements < STATEMENTS && c.sql.len + sql.len <= STATEMENT_TEXT else { return s, false; }
+    c.sql.append(sql);
+    c.stmts[c.statements] = s.id;
+    c.ends[c.statements] = c.sql.len as i32;
+    c.statements++;
+    return s, true;
+}
+
+// Steps s to its end, calling F with each row, and leaves it ready for the
+// next query: reset when c keeps it, finalized when not.
+fn rows<F>(c: Conn&, s: Stmt, kept: bool) -> i64 {
+    var n = 0;
+    let failed = run() {
+        while step(s) {
+            F(Row { s: s });
+            n++;
+        }
+    };
+    if kept {
+        reset_c(s.id);
+        clear_bindings_c(s.id);
+    } else {
+        finalize_c(s.id);
+    }
+    for e in failed { fail(e.code, e.message); }
+    return n;
 }
